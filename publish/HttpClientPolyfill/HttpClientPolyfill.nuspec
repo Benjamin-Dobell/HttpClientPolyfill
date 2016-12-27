@@ -9,9 +9,11 @@
     <projectUrl>https://github.com/erdomke/HttpClientPolyfill</projectUrl>
     <licenseUrl>https://github.com/erdomke/HttpClientPolyfill/blob/master/License.md</licenseUrl>
     <dependencies> 
-       <group targetFramework="net35">
-          <dependency id="TaskParallelLibrary" version="1.0.2856.0" />
-       </group>
+      <group targetFramework="net35">
+        <dependency id="TaskParallelLibrary" version="1.0.2856.0" />
+      </group>
+      <group targetFramework="net40">
+      </group>
     </dependencies>
   </metadata>
 </package>

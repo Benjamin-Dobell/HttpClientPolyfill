@@ -6,7 +6,8 @@
     <authors>erdomke</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>A complete port of Mono's System.Net.Http assembly to .NET 3.5</description>
-    
+    <projectUrl>https://github.com/erdomke/HttpClientPolyfill</projectUrl>
+    <licenseUrl>https://github.com/erdomke/HttpClientPolyfill/blob/master/License.md</licenseUrl>
     <dependencies> 
        <group targetFramework="net35">
           <dependency id="TaskParallelLibrary" version="1.0.2856.0" />

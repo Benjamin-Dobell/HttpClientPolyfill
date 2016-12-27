@@ -22,10 +22,13 @@ Task("Patch-Version")
   .IsDependentOn("Clean")
   .Does(() =>
 {
+  var envCounter = int.Parse(EnvironmentVariable("BuildCounter") ?? "0");
+
   var file = "./HttpClientPolyfill/Properties/AssemblyInfo.cs";
   var info = ParseAssemblyInfo(file);
   var parts = info.AssemblyVersion.Split('.');
   var lastPart = int.Parse(parts[parts.Length - 1]) + 1;
+  lastPart = envCounter > lastPart ? envCounter : lastPart;
   parts[parts.Length - 1] = lastPart.ToString();
   version = string.Join(".", parts);
   CreateAssemblyInfo(file, new AssemblyInfoSettings {

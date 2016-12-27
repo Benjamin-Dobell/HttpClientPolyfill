@@ -7,6 +7,5 @@ using System.Reflection;
 
 [assembly: AssemblyDescription("A complete port of Mono's System.Net.Http assembly to .NET 3.5")]
 [assembly: AssemblyProduct("HttpClientPolyfill")]
-[assembly: AssemblyVersion("1.0.0.3")]
-[assembly: AssemblyFileVersion("1.0.0.3")]
-
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]

@@ -19,6 +19,10 @@ bld/
 [Bb]in/
 [Oo]bj/
 
+# Cake toolin
+[Tt]ools/*
+![Tt]ools/packages.config
+
 # Roslyn cache directories
 *.ide/
 *.vs/

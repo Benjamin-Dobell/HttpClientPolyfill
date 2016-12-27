@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>HttpClientPolyfill</id>
+    <version>1.0.0.0</version>
+    <authors>erdomke</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>A complete port of Mono's System.Net.Http assembly to .NET 3.5</description>
+    
+    <dependencies> 
+       <group targetFramework="net35">
+          <dependency id="TaskParallelLibrary" version="1.0.2856.0" />
+       </group>
+    </dependencies>
+  </metadata>
+</package>

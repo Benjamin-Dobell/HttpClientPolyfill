@@ -1,228 +1,417 @@
-//
-// ContentRangeHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2012 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 
 namespace System.Net.Http.Headers
 {
-	public class ContentRangeHeaderValue : ICloneable
-	{
-		string unit = "bytes";
+  public class ContentRangeHeaderValue : ICloneable
+  {
+    private string _unit;
+    private long? _from;
+    private long? _to;
+    private long? _length;
 
-		private ContentRangeHeaderValue ()
-		{
-		}
+    public string Unit
+    {
+      get { return _unit; }
+      set
+      {
+        HeaderUtilities.CheckValidToken(value, nameof(value));
+        _unit = value;
+      }
+    }
 
-		public ContentRangeHeaderValue (long length)
-		{
-			if (length < 0)
-				throw new ArgumentOutOfRangeException ("length");
+    public long? From
+    {
+      get { return _from; }
+    }
 
-			this.Length = length;
-		}
+    public long? To
+    {
+      get { return _to; }
+    }
 
-		public ContentRangeHeaderValue (long from, long to)
-		{
-			if (from < 0 || from > to)
-				throw new ArgumentOutOfRangeException ("from");
+    public long? Length
+    {
+      get { return _length; }
+    }
 
-			this.From = from;
-			this.To = to;
-		}
+    public bool HasLength // e.g. "Content-Range: bytes 12-34/*"
+    {
+      get { return _length != null; }
+    }
 
-		public ContentRangeHeaderValue (long from, long to, long length)
-			: this (from, to)
-		{
-			if (length < 0)
-				throw new ArgumentOutOfRangeException ("length");
+    public bool HasRange // e.g. "Content-Range: bytes */1234"
+    {
+      get { return _from != null; }
+    }
 
-			if (to > length)
-				throw new ArgumentOutOfRangeException ("to");
+    public ContentRangeHeaderValue(long from, long to, long length)
+    {
+      // Scenario: "Content-Range: bytes 12-34/5678"
 
-			this.Length = length;
-		}
+      if (length < 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(length));
+      }
+      if ((to < 0) || (to > length))
+      {
+        throw new ArgumentOutOfRangeException(nameof(to));
+      }
+      if ((from < 0) || (from > to))
+      {
+        throw new ArgumentOutOfRangeException(nameof(from));
+      }
 
-		public long? From { get; private set; }
+      _from = from;
+      _to = to;
+      _length = length;
+      _unit = HeaderUtilities.BytesUnit;
+    }
 
-		public bool HasLength {
-			get {
-				return Length != null;
-			}
-		}
+    public ContentRangeHeaderValue(long length)
+    {
+      // Scenario: "Content-Range: bytes */1234"
 
-		public bool HasRange {
-			get {
-				return From != null;
-			}
-		}
+      if (length < 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(length));
+      }
 
-		public long? Length { get; private set; }
-		public long? To { get; private set; }
+      _length = length;
+      _unit = HeaderUtilities.BytesUnit;
+    }
 
-		public string Unit {
-			get {
-				return unit;
-			}
-			set {
-				if (value == null)
-					throw new ArgumentNullException ("Unit");
+    public ContentRangeHeaderValue(long from, long to)
+    {
+      // Scenario: "Content-Range: bytes 12-34/*"
 
-				Parser.Token.Check (value);
+      if (to < 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(to));
+      }
+      if ((from < 0) || (from > to))
+      {
+        throw new ArgumentOutOfRangeException(nameof(from));
+      }
 
-				unit = value;
-			}
-		}
+      _from = from;
+      _to = to;
+      _unit = HeaderUtilities.BytesUnit;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    private ContentRangeHeaderValue()
+    {
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as ContentRangeHeaderValue;
-			if (source == null)
-				return false;
+    private ContentRangeHeaderValue(ContentRangeHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-			return source.Length == Length && source.From == From && source.To == To &&
-				string.Equals (source.unit, unit, StringComparison.OrdinalIgnoreCase);
-		}
+      _from = source._from;
+      _to = source._to;
+      _length = source._length;
+      _unit = source._unit;
+    }
 
-		public override int GetHashCode ()
-		{
-			return Unit.GetHashCode () ^ Length.GetHashCode () ^
-				From.GetHashCode () ^ To.GetHashCode () ^
-				unit.ToLowerInvariant ().GetHashCode ();
-		}
+    public override bool Equals(object obj)
+    {
+      ContentRangeHeaderValue other = obj as ContentRangeHeaderValue;
 
-		public static ContentRangeHeaderValue Parse (string input)
-		{
-			ContentRangeHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      if (other == null)
+      {
+        return false;
+      }
 
-			throw new FormatException (input);
-		}
+      return ((_from == other._from) && (_to == other._to) && (_length == other._length) &&
+          string.Equals(_unit, other._unit, StringComparison.OrdinalIgnoreCase));
+    }
 
-		public static bool TryParse (string input, out ContentRangeHeaderValue parsedValue)
-		{
-			parsedValue = null;
+    public override int GetHashCode()
+    {
+      int result = StringComparer.OrdinalIgnoreCase.GetHashCode(_unit);
 
-			var lexer = new Lexer (input);
-			var t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      if (HasRange)
+      {
+        result = result ^ _from.GetHashCode() ^ _to.GetHashCode();
+      }
 
-			var value = new ContentRangeHeaderValue ();
-			value.unit = lexer.GetStringValue (t);
+      if (HasLength)
+      {
+        result = result ^ _length.GetHashCode();
+      }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      return result;
+    }
 
-			int nvalue;
-			if (!lexer.IsStarStringValue (t)) {
-				if (!lexer.TryGetNumericValue (t, out nvalue)) {
-					var s = lexer.GetStringValue (t);
-					if (s.Length < 3)
-						return false;
+    public override string ToString()
+    {
+      StringBuilder sb = new StringBuilder(_unit);
+      sb.Append(' ');
 
-					var sep = s.Split ('-');
-					if (sep.Length != 2)
-						return false;
+      if (HasRange)
+      {
+        sb.Append(_from.Value.ToString(NumberFormatInfo.InvariantInfo));
+        sb.Append('-');
+        sb.Append(_to.Value.ToString(NumberFormatInfo.InvariantInfo));
+      }
+      else
+      {
+        sb.Append('*');
+      }
 
-					if (!int.TryParse (sep[0], NumberStyles.None, CultureInfo.InvariantCulture, out nvalue))
-						return false;
+      sb.Append('/');
+      if (HasLength)
+      {
+        sb.Append(_length.Value.ToString(NumberFormatInfo.InvariantInfo));
+      }
+      else
+      {
+        sb.Append('*');
+      }
 
-					value.From = nvalue;
+      return sb.ToString();
+    }
 
-					if (!int.TryParse (sep[1], NumberStyles.None, CultureInfo.InvariantCulture, out nvalue))
-						return false;
+    public static ContentRangeHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (ContentRangeHeaderValue)GenericHeaderParser.ContentRangeParser.ParseValue(input, null, ref index);
+    }
 
-					value.To = nvalue;
-				} else {
-					value.From = nvalue;
+    public static bool TryParse(string input, out ContentRangeHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-					t = lexer.Scan ();
-					if (t != Token.Type.SeparatorDash)
-						return false;
+      if (GenericHeaderParser.ContentRangeParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (ContentRangeHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-					t = lexer.Scan ();
+    internal static int GetContentRangeLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-					if (!lexer.TryGetNumericValue (t, out nvalue))
-						return false;
+      parsedValue = null;
 
-					value.To = nvalue;
-				}
-			}
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-			t = lexer.Scan ();
+      // Parse the unit string: <unit> in '<unit> <from>-<to>/<length>'
+      int unitLength = HttpRuleParser.GetTokenLength(input, startIndex);
 
-			if (t != Token.Type.SeparatorSlash)
-				return false;
+      if (unitLength == 0)
+      {
+        return 0;
+      }
 
-			t = lexer.Scan ();
+      string unit = input.Substring(startIndex, unitLength);
+      int current = startIndex + unitLength;
+      int separatorLength = HttpRuleParser.GetWhitespaceLength(input, current);
 
-			if (!lexer.IsStarStringValue (t)) {
-				if (!lexer.TryGetNumericValue (t, out nvalue))
-					return false;
+      if (separatorLength == 0)
+      {
+        return 0;
+      }
 
-				value.Length = nvalue;
-			}
+      current = current + separatorLength;
 
-			t = lexer.Scan ();
+      if (current == input.Length)
+      {
+        return 0;
+      }
 
-			if (t != Token.Type.End)
-				return false;
+      // Read range values <from> and <to> in '<unit> <from>-<to>/<length>'
+      int fromStartIndex = current;
+      int fromLength = 0;
+      int toStartIndex = 0;
+      int toLength = 0;
+      if (!TryGetRangeLength(input, ref current, out fromLength, out toStartIndex, out toLength))
+      {
+        return 0;
+      }
 
-			parsedValue = value;
- 
-			return true;
-		}
+      // After the range is read we expect the length separator '/'
+      if ((current == input.Length) || (input[current] != '/'))
+      {
+        return 0;
+      }
 
-		public override string ToString ()
-		{
-			var sb = new StringBuilder (unit);
-			sb.Append (" ");
-			if (From == null) {
-				sb.Append ("*");
-			} else {
-				sb.Append (From.Value.ToString (CultureInfo.InvariantCulture));
-				sb.Append ("-");
-				sb.Append (To.Value.ToString (CultureInfo.InvariantCulture));
-			}
+      current++; // Skip '/' separator
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
 
-			sb.Append ("/");
-			sb.Append (Length == null ? "*" :
-				Length.Value.ToString (CultureInfo.InvariantCulture));
+      if (current == input.Length)
+      {
+        return 0;
+      }
 
-			return sb.ToString ();
-		}
-	}
+      // We may not have a length (e.g. 'bytes 1-2/*'). But if we do, parse the length now.
+      int lengthStartIndex = current;
+      int lengthLength = 0;
+      if (!TryGetLengthLength(input, ref current, out lengthLength))
+      {
+        return 0;
+      }
+
+      if (!TryCreateContentRange(input, unit, fromStartIndex, fromLength, toStartIndex, toLength,
+          lengthStartIndex, lengthLength, out parsedValue))
+      {
+        return 0;
+      }
+
+      return current - startIndex;
+    }
+
+    private static bool TryGetLengthLength(string input, ref int current, out int lengthLength)
+    {
+      lengthLength = 0;
+
+      if (input[current] == '*')
+      {
+        current++;
+      }
+      else
+      {
+        // Parse length value: <length> in '<unit> <from>-<to>/<length>'
+        lengthLength = HttpRuleParser.GetNumberLength(input, current, false);
+
+        if ((lengthLength == 0) || (lengthLength > HttpRuleParser.MaxInt64Digits))
+        {
+          return false;
+        }
+
+        current = current + lengthLength;
+      }
+
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      return true;
+    }
+
+    private static bool TryGetRangeLength(string input, ref int current, out int fromLength, out int toStartIndex,
+        out int toLength)
+    {
+      fromLength = 0;
+      toStartIndex = 0;
+      toLength = 0;
+
+      // Check if we have a value like 'bytes */133'. If yes, skip the range part and continue parsing the 
+      // length separator '/'.
+      if (input[current] == '*')
+      {
+        current++;
+      }
+      else
+      {
+        // Parse first range value: <from> in '<unit> <from>-<to>/<length>'
+        fromLength = HttpRuleParser.GetNumberLength(input, current, false);
+
+        if ((fromLength == 0) || (fromLength > HttpRuleParser.MaxInt64Digits))
+        {
+          return false;
+        }
+
+        current = current + fromLength;
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+        // After the first value, the '-' character must follow.
+        if ((current == input.Length) || (input[current] != '-'))
+        {
+          // We need a '-' character otherwise this can't be a valid range.
+          return false;
+        }
+
+        current++; // skip the '-' character
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+        if (current == input.Length)
+        {
+          return false;
+        }
+
+        // Parse second range value: <to> in '<unit> <from>-<to>/<length>'
+        toStartIndex = current;
+        toLength = HttpRuleParser.GetNumberLength(input, current, false);
+
+        if ((toLength == 0) || (toLength > HttpRuleParser.MaxInt64Digits))
+        {
+          return false;
+        }
+
+        current = current + toLength;
+      }
+
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      return true;
+    }
+
+    private static bool TryCreateContentRange(string input, string unit, int fromStartIndex, int fromLength,
+        int toStartIndex, int toLength, int lengthStartIndex, int lengthLength, out object parsedValue)
+    {
+      parsedValue = null;
+
+      long from = 0;
+      if ((fromLength > 0) && !HeaderUtilities.TryParseInt64(input.Substring(fromStartIndex, fromLength), out from))
+      {
+        return false;
+      }
+
+      long to = 0;
+      if ((toLength > 0) && !HeaderUtilities.TryParseInt64(input.Substring(toStartIndex, toLength), out to))
+      {
+        return false;
+      }
+
+      // 'from' must not be greater than 'to'
+      if ((fromLength > 0) && (toLength > 0) && (from > to))
+      {
+        return false;
+      }
+
+      long length = 0;
+      if ((lengthLength > 0) && !HeaderUtilities.TryParseInt64(input.Substring(lengthStartIndex, lengthLength),
+          out length))
+      {
+        return false;
+      }
+
+      // 'from' and 'to' must be less than 'length'
+      if ((toLength > 0) && (lengthLength > 0) && (to >= length))
+      {
+        return false;
+      }
+
+      ContentRangeHeaderValue result = new ContentRangeHeaderValue();
+      result._unit = unit;
+
+      if (fromLength > 0)
+      {
+        result._from = from;
+        result._to = to;
+      }
+
+      if (lengthLength > 0)
+      {
+        result._length = length;
+      }
+
+      parsedValue = result;
+      return true;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new ContentRangeHeaderValue(this);
+    }
+  }
 }

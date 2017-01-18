@@ -1,105 +1,66 @@
-//
-// TransferCodingWithQualityHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System;
 
 namespace System.Net.Http.Headers
 {
-	public sealed class TransferCodingWithQualityHeaderValue : TransferCodingHeaderValue
-	{
-		public TransferCodingWithQualityHeaderValue (string value)
-			: base (value)
-		{
-		}
+  public sealed class TransferCodingWithQualityHeaderValue : TransferCodingHeaderValue, ICloneable
+  {
+    public double? Quality
+    {
+      get { return HeaderUtilities.GetQuality((ObjectCollection<NameValueHeaderValue>)Parameters); }
+      set { HeaderUtilities.SetQuality((ObjectCollection<NameValueHeaderValue>)Parameters, value); }
+    }
 
-		public TransferCodingWithQualityHeaderValue (string value, double quality)
-			: this (value)
-		{
-			Quality = quality;
-		}
+    internal TransferCodingWithQualityHeaderValue()
+    {
+      // Used by the parser to create a new instance of this type.
+    }
 
-		private TransferCodingWithQualityHeaderValue ()
-		{
-		}
+    public TransferCodingWithQualityHeaderValue(string value)
+        : base(value)
+    {
+    }
 
-		public double? Quality {
-			get {
-				return QualityValue.GetValue (parameters);
-			}
-			set {
-				QualityValue.SetValue (ref parameters, value);
-			}
-		}
+    public TransferCodingWithQualityHeaderValue(string value, double quality)
+        : base(value)
+    {
+      Quality = quality;
+    }
 
-		public new static TransferCodingWithQualityHeaderValue Parse (string input)
-		{
-			TransferCodingWithQualityHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    private TransferCodingWithQualityHeaderValue(TransferCodingWithQualityHeaderValue source)
+        : base(source)
+    {
+      // No additional members to initialize here. This constructor is used by Clone().
+    }
 
-			throw new FormatException ();
-		}
+    object ICloneable.Clone()
+    {
+      return new TransferCodingWithQualityHeaderValue(this);
+    }
 
-		public static bool TryParse (string input, out TransferCodingWithQualityHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+    public static new TransferCodingWithQualityHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (TransferCodingWithQualityHeaderValue)TransferCodingHeaderParser.SingleValueWithQualityParser
+          .ParseValue(input, null, ref index);
+    }
 
-			parsedValue = null;
-			return false;
-		}
+    public static bool TryParse(string input, out TransferCodingWithQualityHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-		internal static bool TryParse (string input, int minimalCount, out List<TransferCodingWithQualityHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
-
-		static bool TryParseElement (Lexer lexer, out TransferCodingWithQualityHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
-
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
-
-			var result = new TransferCodingWithQualityHeaderValue ();
-			result.value = lexer.GetStringValue (t);
-
-			t = lexer.Scan ();
-
-			// Parameters parsing
-			if (t == Token.Type.SeparatorSemicolon && (!NameValueHeaderValue.TryParseParameters (lexer, out result.parameters, out t) || t != Token.Type.End))
-				return false;
-
-			parsedValue = result;
-			return true;
-		}
-	}
+      if (TransferCodingHeaderParser.SingleValueWithQualityParser.TryParseValue(
+          input, null, ref index, out output))
+      {
+        parsedValue = (TransferCodingWithQualityHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
+  }
 }

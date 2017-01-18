@@ -1,151 +1,231 @@
-//
-// StringWithQualityHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 
 namespace System.Net.Http.Headers
 {
-	public class StringWithQualityHeaderValue : ICloneable
-	{
-		public StringWithQualityHeaderValue (string value)
-		{
-			Parser.Token.Check (value);
-			this.Value = value;
-		}
+  public class StringWithQualityHeaderValue : ICloneable
+  {
+    private string _value;
+    private double? _quality;
 
-		public StringWithQualityHeaderValue (string value, double quality)
-			: this (value)
-		{
-			if (quality < 0 || quality > 1)
-				throw new ArgumentOutOfRangeException ("quality");
+    public string Value
+    {
+      get { return _value; }
+    }
 
-			Quality = quality;
-		}
+    public double? Quality
+    {
+      get { return _quality; }
+    }
 
-		private StringWithQualityHeaderValue ()
-		{
-		}
+    public StringWithQualityHeaderValue(string value)
+    {
+      HeaderUtilities.CheckValidToken(value, nameof(value));
 
-		public double? Quality { get; private set; }
-		public string Value { get; private set; }
+      _value = value;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public StringWithQualityHeaderValue(string value, double quality)
+    {
+      HeaderUtilities.CheckValidToken(value, nameof(value));
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as StringWithQualityHeaderValue;
-			return source != null &&
-				string.Equals (source.Value, Value, StringComparison.OrdinalIgnoreCase) &&
-				source.Quality == Quality;
-		}
+      if ((quality < 0) || (quality > 1))
+      {
+        throw new ArgumentOutOfRangeException(nameof(quality));
+      }
 
-		public override int GetHashCode ()
-		{
-			return Value.ToLowerInvariant ().GetHashCode () ^ Quality.GetHashCode ();
-		}
+      _value = value;
+      _quality = quality;
+    }
 
-		public static StringWithQualityHeaderValue Parse (string input)
-		{
-			StringWithQualityHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    private StringWithQualityHeaderValue(StringWithQualityHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-			throw new FormatException (input);
-		}
-		
-		public static bool TryParse (string input, out StringWithQualityHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+      _value = source._value;
+      _quality = source._quality;
+    }
 
-			parsedValue = null;
-			return false;
-		}
+    private StringWithQualityHeaderValue()
+    {
+    }
 
-		internal static bool TryParse (string input, int minimalCount, out List<StringWithQualityHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+    public override string ToString()
+    {
+      if (_quality.HasValue)
+      {
+        return _value + "; q=" + _quality.Value.ToString("0.0##", NumberFormatInfo.InvariantInfo);
+      }
 
-		static bool TryParseElement (Lexer lexer, out StringWithQualityHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      return _value;
+    }
 
-			var value = new StringWithQualityHeaderValue ();
-			value.Value = lexer.GetStringValue (t);
+    public override bool Equals(object obj)
+    {
+      StringWithQualityHeaderValue other = obj as StringWithQualityHeaderValue;
 
-			t = lexer.Scan ();
-			if (t == Token.Type.SeparatorSemicolon) {
-				t = lexer.Scan ();
-				if (t != Token.Type.Token)
-					return false;
+      if (other == null)
+      {
+        return false;
+      }
 
-				var s = lexer.GetStringValue (t);
-				if (s != "q" && s != "Q")
-					return false;
+      if (!string.Equals(_value, other._value, StringComparison.OrdinalIgnoreCase))
+      {
+        return false;
+      }
 
-				t = lexer.Scan ();
-				if (t != Token.Type.SeparatorEqual)
-					return false;
+      if (_quality.HasValue)
+      {
+        // Note that we don't consider double.Epsilon here. We really consider two values equal if they're
+        // actually equal. This makes sure that we also get the same hashcode for two values considered equal
+        // by Equals(). 
+        return other._quality.HasValue && (_quality.Value == other._quality.Value);
+      }
 
-				t = lexer.Scan ();
+      // If we don't have a quality value, then 'other' must also have no quality assigned in order to be 
+      // considered equal.
+      return !other._quality.HasValue;
+    }
 
-				double d;
-				if (!lexer.TryGetDoubleValue (t, out d))
-					return false;
+    public override int GetHashCode()
+    {
+      int result = StringComparer.OrdinalIgnoreCase.GetHashCode(_value);
 
-				if (d > 1)
-					return false;
+      if (_quality.HasValue)
+      {
+        result = result ^ _quality.Value.GetHashCode();
+      }
 
-				value.Quality = d;
+      return result;
+    }
 
-				t = lexer.Scan ();
-			}
+    public static StringWithQualityHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (StringWithQualityHeaderValue)GenericHeaderParser.SingleValueStringWithQualityParser.ParseValue(
+          input, null, ref index);
+    }
 
-			parsedValue = value;
-			return true;
-		}
+    public static bool TryParse(string input, out StringWithQualityHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-		public override string ToString ()
-		{
-			if (Quality != null)
-				return Value + "; q=" + Quality.Value.ToString ("0.0##", CultureInfo.InvariantCulture);
+      if (GenericHeaderParser.SingleValueStringWithQualityParser.TryParseValue(
+          input, null, ref index, out output))
+      {
+        parsedValue = (StringWithQualityHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-			return Value;
-		}
-	}
+    internal static int GetStringWithQualityLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
+
+      parsedValue = null;
+
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
+
+      // Parse the value string: <value> in '<value>; q=<quality>'
+      int valueLength = HttpRuleParser.GetTokenLength(input, startIndex);
+
+      if (valueLength == 0)
+      {
+        return 0;
+      }
+
+      StringWithQualityHeaderValue result = new StringWithQualityHeaderValue();
+      result._value = input.Substring(startIndex, valueLength);
+      int current = startIndex + valueLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      if ((current == input.Length) || (input[current] != ';'))
+      {
+        parsedValue = result;
+        return current - startIndex; // we have a valid token, but no quality.
+      }
+
+      current++; // skip ';' separator
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      // If we found a ';' separator, it must be followed by a quality information
+      if (!TryReadQuality(input, result, ref current))
+      {
+        return 0;
+      }
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    private static bool TryReadQuality(string input, StringWithQualityHeaderValue result, ref int index)
+    {
+      int current = index;
+
+      // See if we have a quality value by looking for "q"
+      if ((current == input.Length) || ((input[current] != 'q') && (input[current] != 'Q')))
+      {
+        return false;
+      }
+
+      current++; // skip 'q' identifier
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      // If we found "q" it must be followed by "="
+      if ((current == input.Length) || (input[current] != '='))
+      {
+        return false;
+      }
+
+      current++; // skip '=' separator
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      if (current == input.Length)
+      {
+        return false;
+      }
+
+      int qualityLength = HttpRuleParser.GetNumberLength(input, current, true);
+
+      if (qualityLength == 0)
+      {
+        return false;
+      }
+
+      double quality = 0;
+      if (!double.TryParse(input.Substring(current, qualityLength), NumberStyles.AllowDecimalPoint,
+          NumberFormatInfo.InvariantInfo, out quality))
+      {
+        return false;
+      }
+
+      if ((quality < 0) || (quality > 1))
+      {
+        return false;
+      }
+
+      result._quality = quality;
+
+      current = current + qualityLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      index = current;
+      return true;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new StringWithQualityHeaderValue(this);
+    }
+  }
 }

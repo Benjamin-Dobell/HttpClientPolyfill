@@ -1,109 +1,187 @@
-//
-// RetryConditionHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System.Diagnostics;
 using System.Globalization;
 
 namespace System.Net.Http.Headers
 {
-	public class RetryConditionHeaderValue : ICloneable
-	{
-		public RetryConditionHeaderValue (DateTimeOffset date)
-		{
-			Date = date;
-		}
+  public class RetryConditionHeaderValue : ICloneable
+  {
+    private DateTimeOffset? _date;
+    private TimeSpan? _delta;
 
-		public RetryConditionHeaderValue (TimeSpan delta)
-		{
-			if (delta.TotalSeconds > uint.MaxValue)
-				throw new ArgumentOutOfRangeException ("delta");
+    public DateTimeOffset? Date
+    {
+      get { return _date; }
+    }
 
-			Delta = delta;
-		}
+    public TimeSpan? Delta
+    {
+      get { return _delta; }
+    }
 
-		public DateTimeOffset? Date { get; private set; }
-		public TimeSpan? Delta { get; private set; }
+    public RetryConditionHeaderValue(DateTimeOffset date)
+    {
+      _date = date;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public RetryConditionHeaderValue(TimeSpan delta)
+    {
+      // The amount of seconds for 'delta' must be in the range 0..2^31
+      if (delta.TotalSeconds > int.MaxValue)
+      {
+        throw new ArgumentOutOfRangeException(nameof(delta));
+      }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as RetryConditionHeaderValue;
-			return source != null && source.Date == Date && source.Delta == Delta;
-		}
+      _delta = delta;
+    }
 
-		public override int GetHashCode ()
-		{
-			return Date.GetHashCode () ^ Delta.GetHashCode ();
-		}
+    private RetryConditionHeaderValue(RetryConditionHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public static RetryConditionHeaderValue Parse (string input)
-		{
-			RetryConditionHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      _delta = source._delta;
+      _date = source._date;
+    }
 
-			throw new FormatException (input);
-		}
+    private RetryConditionHeaderValue()
+    {
+    }
 
-		public static bool TryParse (string input, out RetryConditionHeaderValue parsedValue)
-		{
-			parsedValue = null;
+    public override string ToString()
+    {
+      if (_delta.HasValue)
+      {
+        return ((int)_delta.Value.TotalSeconds).ToString(NumberFormatInfo.InvariantInfo);
+      }
+      return HttpRuleParser.DateToString(_date.Value);
+    }
 
-			var lexer = new Lexer (input);
-			var t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+    public override bool Equals(object obj)
+    {
+      RetryConditionHeaderValue other = obj as RetryConditionHeaderValue;
 
-			var ts = lexer.TryGetTimeSpanValue (t);
-			if (ts != null) {
-				if (lexer.Scan () != Token.Type.End)
-					return false;
+      if (other == null)
+      {
+        return false;
+      }
 
-				parsedValue = new RetryConditionHeaderValue (ts.Value);
-			} else {
-				DateTimeOffset date;
-				if (!Lexer.TryGetDateValue (input, out date))
-					return false;
+      if (_delta.HasValue)
+      {
+        return (other._delta != null) && (_delta.Value == other._delta.Value);
+      }
 
-				parsedValue = new RetryConditionHeaderValue (date);
-			}
+      return (other._date != null) && (_date.Value == other._date.Value);
+    }
 
-			return true;
-		}
+    public override int GetHashCode()
+    {
+      if (_delta == null)
+      {
+        return _date.Value.GetHashCode();
+      }
 
-		public override string ToString ()
-		{
-			return Delta != null ?
-				Delta.Value.TotalSeconds.ToString (CultureInfo.InvariantCulture) :
-				Date.Value.ToString ("r", CultureInfo.InvariantCulture);
-		}
-	}
+      return _delta.Value.GetHashCode();
+    }
+
+    public static RetryConditionHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (RetryConditionHeaderValue)GenericHeaderParser.RetryConditionParser.ParseValue(
+          input, null, ref index);
+    }
+
+    public static bool TryParse(string input, out RetryConditionHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
+
+      if (GenericHeaderParser.RetryConditionParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (RetryConditionHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
+
+    internal static int GetRetryConditionLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
+
+      parsedValue = null;
+
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
+
+      int current = startIndex;
+
+      // Caller must remove leading whitespace.
+      DateTimeOffset date = DateTimeOffset.MinValue;
+      int deltaSeconds = -1; // use -1 to indicate that the value was not set. 'delta' values are always >=0
+
+      // We either have a timespan or a date/time value. Determine which one we have by looking at the first char.
+      // If it is a number, we have a timespan, otherwise we assume we have a date.
+      char firstChar = input[current];
+
+      if ((firstChar >= '0') && (firstChar <= '9'))
+      {
+        int deltaStartIndex = current;
+        int deltaLength = HttpRuleParser.GetNumberLength(input, current, false);
+
+        // The value must be in the range 0..2^31
+        if ((deltaLength == 0) || (deltaLength > HttpRuleParser.MaxInt32Digits))
+        {
+          return 0;
+        }
+
+        current = current + deltaLength;
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+        // RetryConditionHeaderValue only allows 1 value. There must be no delimiter/other chars after 'delta'
+        if (current != input.Length)
+        {
+          return 0;
+        }
+
+        if (!HeaderUtilities.TryParseInt32(input.Substring(deltaStartIndex, deltaLength), out deltaSeconds))
+        {
+          return 0; // int.TryParse() may return 'false' if the value has 10 digits and is > Int32.MaxValue.
+        }
+      }
+      else
+      {
+        if (!HttpRuleParser.TryStringToDate(input.Substring(current), out date))
+        {
+          return 0;
+        }
+
+        // If we got a valid date, then the parser consumed the whole string (incl. trailing whitespace).
+        current = input.Length;
+      }
+
+      RetryConditionHeaderValue result = new RetryConditionHeaderValue();
+
+      if (deltaSeconds == -1) // we didn't change delta, so we must have found a date.
+      {
+        result._date = date;
+      }
+      else
+      {
+        result._delta = new TimeSpan(0, 0, deltaSeconds);
+      }
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new RetryConditionHeaderValue(this);
+    }
+  }
 }

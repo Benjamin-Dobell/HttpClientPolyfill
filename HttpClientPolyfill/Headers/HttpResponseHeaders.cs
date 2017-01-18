@@ -1,203 +1,242 @@
-//
-// HttpResponseHeaders.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace System.Net.Http.Headers
 {
-	public sealed class HttpResponseHeaders : HttpHeaders
-	{
-		internal HttpResponseHeaders ()
-			: base (HttpHeaderKind.Response)
-		{
-		}
+  [SuppressMessage("Microsoft.Naming", "CA1710:IdentifiersShouldHaveCorrectSuffix",
+      Justification = "This is not a collection")]
+  public sealed class HttpResponseHeaders : HttpHeaders
+  {
+    private static readonly Dictionary<string, HttpHeaderParser> s_parserStore = CreateParserStore();
+    private static readonly HashSet<string> s_invalidHeaders = CreateInvalidHeaders();
 
-		public HttpHeaderValueCollection<string> AcceptRanges {
-			get {
-				return GetValues<string> ("Accept-Ranges");
-			}
-		}
+    private HttpGeneralHeaders _generalHeaders;
+    private HttpHeaderValueCollection<string> _acceptRanges;
+    private HttpHeaderValueCollection<AuthenticationHeaderValue> _wwwAuthenticate;
+    private HttpHeaderValueCollection<AuthenticationHeaderValue> _proxyAuthenticate;
+    private HttpHeaderValueCollection<ProductInfoHeaderValue> _server;
+    private HttpHeaderValueCollection<string> _vary;
 
-		public TimeSpan? Age {
-			get {
-				return GetValue<TimeSpan?> ("Age");
-			}
-			set {
-				AddOrRemove ("Age", value, l => ((long)((TimeSpan)l).TotalSeconds).ToString ()); 
-			}
-		}
+    #region Response Headers
 
-		public CacheControlHeaderValue CacheControl {
-			get {
-				return GetValue<CacheControlHeaderValue> ("Cache-Control");
-			}
-			set {
-				AddOrRemove ("Cache-Control", value);
-			}
-		}
+    public HttpHeaderValueCollection<string> AcceptRanges
+    {
+      get
+      {
+        if (_acceptRanges == null)
+        {
+          _acceptRanges = new HttpHeaderValueCollection<string>(KnownHeaderNames.AcceptRanges,
+              this, HeaderUtilities.TokenValidator);
+        }
+        return _acceptRanges;
+      }
+    }
 
-		public HttpHeaderValueCollection<string> Connection {
-			get {
-				return GetValues<string> ("Connection");
-			}
-		}
+    public TimeSpan? Age
+    {
+      get { return HeaderUtilities.GetTimeSpanValue(KnownHeaderNames.Age, this); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.Age, value); }
+    }
 
-		public bool? ConnectionClose {
-			get {
-				if (connectionclose == true || Connection.Find (l => string.Equals (l, "close", StringComparison.OrdinalIgnoreCase)) != null)
-					return true;
+    public EntityTagHeaderValue ETag
+    {
+      get { return (EntityTagHeaderValue)GetParsedValues(KnownHeaderNames.ETag); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ETag, value); }
+    }
 
-				return connectionclose;
-			}
-			set {
-				if (connectionclose == value)
-					return;
+    public Uri Location
+    {
+      get { return (Uri)GetParsedValues(KnownHeaderNames.Location); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.Location, value); }
+    }
 
-				Connection.Remove ("close");
-				if (value == true)
-					Connection.Add ("close");
+    public HttpHeaderValueCollection<AuthenticationHeaderValue> ProxyAuthenticate
+    {
+      get
+      {
+        if (_proxyAuthenticate == null)
+        {
+          _proxyAuthenticate = new HttpHeaderValueCollection<AuthenticationHeaderValue>(
+              KnownHeaderNames.ProxyAuthenticate, this);
+        }
+        return _proxyAuthenticate;
+      }
+    }
 
-				connectionclose = value;
-			}
-		}
+    public RetryConditionHeaderValue RetryAfter
+    {
+      get { return (RetryConditionHeaderValue)GetParsedValues(KnownHeaderNames.RetryAfter); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.RetryAfter, value); }
+    }
 
-		public DateTimeOffset? Date {
-			get {
-				return GetValue<DateTimeOffset?> ("Date");
-			}
-			set {
-				AddOrRemove ("Date", value, Parser.DateTime.ToString);
-			}
-		}
+    public HttpHeaderValueCollection<ProductInfoHeaderValue> Server
+    {
+      get
+      {
+        if (_server == null)
+        {
+          _server = new HttpHeaderValueCollection<ProductInfoHeaderValue>(KnownHeaderNames.Server, this);
+        }
+        return _server;
+      }
+    }
 
-		public EntityTagHeaderValue ETag {
-			get {
-				return GetValue<EntityTagHeaderValue> ("ETag");
-			}
-			set {
-				AddOrRemove ("ETag", value);
-			}
-		}
+    public HttpHeaderValueCollection<string> Vary
+    {
+      get
+      {
+        if (_vary == null)
+        {
+          _vary = new HttpHeaderValueCollection<string>(KnownHeaderNames.Vary,
+              this, HeaderUtilities.TokenValidator);
+        }
+        return _vary;
+      }
+    }
 
-		public Uri Location {
-			get {
-				return GetValue<Uri> ("Location");
-			}
-			set {
-				AddOrRemove ("Location", value);
-			}
-		}
+    public HttpHeaderValueCollection<AuthenticationHeaderValue> WwwAuthenticate
+    {
+      get
+      {
+        if (_wwwAuthenticate == null)
+        {
+          _wwwAuthenticate = new HttpHeaderValueCollection<AuthenticationHeaderValue>(
+              KnownHeaderNames.WWWAuthenticate, this);
+        }
+        return _wwwAuthenticate;
+      }
+    }
 
-		public HttpHeaderValueCollection<NameValueHeaderValue> Pragma {
-			get {
-				return GetValues<NameValueHeaderValue> ("Pragma");
-			}
-		}
+    #endregion
 
-		public HttpHeaderValueCollection<AuthenticationHeaderValue> ProxyAuthenticate {
-			get {
-				return GetValues<AuthenticationHeaderValue> ("Proxy-Authenticate");
-			}
-		}
+    #region General Headers
 
-		public RetryConditionHeaderValue RetryAfter {
-			get {
-				return GetValue<RetryConditionHeaderValue> ("Retry-After");
-			}
-			set {
-				AddOrRemove ("Retry-After", value);
-			}
-		}
+    public CacheControlHeaderValue CacheControl
+    {
+      get { return _generalHeaders.CacheControl; }
+      set { _generalHeaders.CacheControl = value; }
+    }
 
-		public HttpHeaderValueCollection<ProductInfoHeaderValue> Server {
-			get {
-				return GetValues<ProductInfoHeaderValue> ("Server");
-			}
-		}
+    public HttpHeaderValueCollection<string> Connection
+    {
+      get { return _generalHeaders.Connection; }
+    }
 
-		public HttpHeaderValueCollection<string> Trailer {
-			get {
-				return GetValues<string> ("Trailer");
-			}
-		}
+    public bool? ConnectionClose
+    {
+      get { return _generalHeaders.ConnectionClose; }
+      set { _generalHeaders.ConnectionClose = value; }
+    }
 
-		public HttpHeaderValueCollection<TransferCodingHeaderValue> TransferEncoding {
-			get {
-				return GetValues<TransferCodingHeaderValue> ("Transfer-Encoding");
-			}
-		}
+    public DateTimeOffset? Date
+    {
+      get { return _generalHeaders.Date; }
+      set { _generalHeaders.Date = value; }
+    }
 
-		public bool? TransferEncodingChunked {
-			get {
-				if (transferEncodingChunked.HasValue)
-					return transferEncodingChunked;
+    public HttpHeaderValueCollection<NameValueHeaderValue> Pragma
+    {
+      get { return _generalHeaders.Pragma; }
+    }
 
-				var found = TransferEncoding.Find (l => StringComparer.OrdinalIgnoreCase.Equals (l.Value, "chunked"));
-				return found != null ? true : (bool?) null;
-			}
-			set {
-				if (value == transferEncodingChunked)
-					return;
+    public HttpHeaderValueCollection<string> Trailer
+    {
+      get { return _generalHeaders.Trailer; }
+    }
 
-				TransferEncoding.Remove (l => l.Value == "chunked");
-				if (value == true)
-					TransferEncoding.Add (new TransferCodingHeaderValue ("chunked"));
+    public HttpHeaderValueCollection<TransferCodingHeaderValue> TransferEncoding
+    {
+      get { return _generalHeaders.TransferEncoding; }
+    }
 
-				transferEncodingChunked = value;
-			}
-		}
+    public bool? TransferEncodingChunked
+    {
+      get { return _generalHeaders.TransferEncodingChunked; }
+      set { _generalHeaders.TransferEncodingChunked = value; }
+    }
 
-		public HttpHeaderValueCollection<ProductHeaderValue> Upgrade {
-			get {
-				return GetValues<ProductHeaderValue> ("Upgrade");
-			}
-		}
+    public HttpHeaderValueCollection<ProductHeaderValue> Upgrade
+    {
+      get { return _generalHeaders.Upgrade; }
+    }
 
-		public HttpHeaderValueCollection<string> Vary {
-			get {
-				return GetValues<string> ("Vary");
-			}
-		}
+    public HttpHeaderValueCollection<ViaHeaderValue> Via
+    {
+      get { return _generalHeaders.Via; }
+    }
 
-		public HttpHeaderValueCollection<ViaHeaderValue> Via {
-			get {
-				return GetValues<ViaHeaderValue> ("Via");
-			}
-		}
+    public HttpHeaderValueCollection<WarningHeaderValue> Warning
+    {
+      get { return _generalHeaders.Warning; }
+    }
 
-		public HttpHeaderValueCollection<WarningHeaderValue> Warning {
-			get {
-				return GetValues<WarningHeaderValue> ("Warning");
-			}
-		}
+    #endregion
 
-		public HttpHeaderValueCollection<AuthenticationHeaderValue> WwwAuthenticate {
-			get {
-				return GetValues<AuthenticationHeaderValue> ("WWW-Authenticate");
-			}
-		}
-	}
+    internal HttpResponseHeaders()
+    {
+      _generalHeaders = new HttpGeneralHeaders(this);
+
+      base.SetConfiguration(s_parserStore, s_invalidHeaders);
+    }
+
+    private static Dictionary<string, HttpHeaderParser> CreateParserStore()
+    {
+      var parserStore = new Dictionary<string, HttpHeaderParser>(StringComparer.OrdinalIgnoreCase);
+
+      parserStore.Add(KnownHeaderNames.AcceptRanges, GenericHeaderParser.TokenListParser);
+      parserStore.Add(KnownHeaderNames.Age, TimeSpanHeaderParser.Parser);
+      parserStore.Add(KnownHeaderNames.ETag, GenericHeaderParser.SingleValueEntityTagParser);
+      parserStore.Add(KnownHeaderNames.Location, UriHeaderParser.RelativeOrAbsoluteUriParser);
+      parserStore.Add(KnownHeaderNames.ProxyAuthenticate, GenericHeaderParser.MultipleValueAuthenticationParser);
+      parserStore.Add(KnownHeaderNames.RetryAfter, GenericHeaderParser.RetryConditionParser);
+      parserStore.Add(KnownHeaderNames.Server, ProductInfoHeaderParser.MultipleValueParser);
+      parserStore.Add(KnownHeaderNames.Vary, GenericHeaderParser.TokenListParser);
+      parserStore.Add(KnownHeaderNames.WWWAuthenticate, GenericHeaderParser.MultipleValueAuthenticationParser);
+
+      HttpGeneralHeaders.AddParsers(parserStore);
+
+      return parserStore;
+    }
+
+    private static HashSet<string> CreateInvalidHeaders()
+    {
+      var invalidHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      HttpContentHeaders.AddKnownHeaders(invalidHeaders);
+      return invalidHeaders;
+
+      // Note: Reserved request header names are allowed as custom response header names.  Reserved request
+      // headers have no defined meaning or format when used on a response. This enables a client to accept
+      // any headers sent from the server as either content headers or response headers.
+    }
+
+    internal static void AddKnownHeaders(HashSet<string> headerSet)
+    {
+      Debug.Assert(headerSet != null);
+
+      headerSet.Add(KnownHeaderNames.AcceptRanges);
+      headerSet.Add(KnownHeaderNames.Age);
+      headerSet.Add(KnownHeaderNames.ETag);
+      headerSet.Add(KnownHeaderNames.Location);
+      headerSet.Add(KnownHeaderNames.ProxyAuthenticate);
+      headerSet.Add(KnownHeaderNames.RetryAfter);
+      headerSet.Add(KnownHeaderNames.Server);
+      headerSet.Add(KnownHeaderNames.Vary);
+      headerSet.Add(KnownHeaderNames.WWWAuthenticate);
+    }
+
+    internal override void AddHeaders(HttpHeaders sourceHeaders)
+    {
+      base.AddHeaders(sourceHeaders);
+      HttpResponseHeaders sourceResponseHeaders = sourceHeaders as HttpResponseHeaders;
+      Debug.Assert(sourceResponseHeaders != null);
+
+      // Copy special values, but do not overwrite
+      _generalHeaders.AddSpecialsFrom(sourceResponseHeaders._generalHeaders);
+    }
+  }
 }

@@ -1,191 +1,271 @@
-//
-// MediaTypeHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class MediaTypeHeaderValue : ICloneable
-	{
-		internal List<NameValueHeaderValue> parameters;
-		internal string media_type;
+  public class MediaTypeHeaderValue : ICloneable
+  {
+    private const string charSet = "charset";
 
-		public MediaTypeHeaderValue (string mediaType)
-		{
-			MediaType = mediaType;
-		}
+    private ObjectCollection<NameValueHeaderValue> _parameters;
+    private string _mediaType;
 
-		protected MediaTypeHeaderValue (MediaTypeHeaderValue source)
-		{
-			if (source == null)
-				throw new ArgumentNullException ("source");
+    public string CharSet
+    {
+      get
+      {
+        NameValueHeaderValue charSetParameter = NameValueHeaderValue.Find(_parameters, charSet);
+        if (charSetParameter != null)
+        {
+          return charSetParameter.Value;
+        }
+        return null;
+      }
+      set
+      {
+        // We don't prevent a user from setting whitespace-only charsets. Like we can't prevent a user from
+        // setting a non-existing charset.
+        NameValueHeaderValue charSetParameter = NameValueHeaderValue.Find(_parameters, charSet);
+        if (string.IsNullOrEmpty(value))
+        {
+          // Remove charset parameter
+          if (charSetParameter != null)
+          {
+            _parameters.Remove(charSetParameter);
+          }
+        }
+        else
+        {
+          if (charSetParameter != null)
+          {
+            charSetParameter.Value = value;
+          }
+          else
+          {
+            Parameters.Add(new NameValueHeaderValue(charSet, value));
+          }
+        }
+      }
+    }
 
-			media_type = source.media_type;
-			if (source.parameters != null) {
-				foreach (var item in source.parameters)
-					Parameters.Add (new NameValueHeaderValue (item));
-			}
-		}
+    public ICollection<NameValueHeaderValue> Parameters
+    {
+      get
+      {
+        if (_parameters == null)
+        {
+          _parameters = new ObjectCollection<NameValueHeaderValue>();
+        }
+        return _parameters;
+      }
+    }
 
-		internal MediaTypeHeaderValue ()
-		{
-		}
+    public string MediaType
+    {
+      get { return _mediaType; }
+      set
+      {
+        CheckMediaTypeFormat(value, nameof(value));
+        _mediaType = value;
+      }
+    }
 
-		public string CharSet {
-			get {
-				if (parameters == null)
-					return null;
+    internal MediaTypeHeaderValue()
+    {
+      // Used by the parser to create a new instance of this type.
+    }
 
-				var found = parameters.Find (l => string.Equals (l.Name, "charset", StringComparison.OrdinalIgnoreCase));
-				if (found == null)
-					return null;
+    protected MediaTypeHeaderValue(MediaTypeHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-				return found.Value;
-			}
+      _mediaType = source._mediaType;
 
-			set {
-				if (parameters == null)
-					parameters = new List<NameValueHeaderValue> ();
+      if (source._parameters != null)
+      {
+        foreach (var parameter in source._parameters)
+        {
+          this.Parameters.Add((NameValueHeaderValue)((ICloneable)parameter).Clone());
+        }
+      }
+    }
 
-				parameters.SetValue ("charset", value);
-			}
-		}
+    public MediaTypeHeaderValue(string mediaType)
+    {
+      CheckMediaTypeFormat(mediaType, nameof(mediaType));
+      _mediaType = mediaType;
+    }
 
-		public string MediaType {
-			get {
-				return media_type;
-			}
-			set {
-				if (value == null)
-					throw new ArgumentNullException ("MediaType");
+    public override string ToString()
+    {
+      return _mediaType + NameValueHeaderValue.ToString(_parameters, ';', true);
+    }
 
-				string temp;
-				var token = TryParseMediaType (new Lexer (value), out temp);
-				if (token == null || token.Value.Kind != Token.Type.End)
-					throw new FormatException ();
+    public override bool Equals(object obj)
+    {
+      MediaTypeHeaderValue other = obj as MediaTypeHeaderValue;
 
-				media_type = temp;
-			}
-		}
+      if (other == null)
+      {
+        return false;
+      }
 
-		public ICollection<NameValueHeaderValue> Parameters {
-			get {
-				return parameters ?? (parameters = new List<NameValueHeaderValue> ());
-			}
-		}
+      return string.Equals(_mediaType, other._mediaType, StringComparison.OrdinalIgnoreCase) &&
+          HeaderUtilities.AreEqualCollections(_parameters, other._parameters);
+    }
 
-		object ICloneable.Clone ()
-		{
-			return new MediaTypeHeaderValue (this);
-		}
+    public override int GetHashCode()
+    {
+      // The media-type string is case-insensitive.
+      return StringComparer.OrdinalIgnoreCase.GetHashCode(_mediaType) ^ NameValueHeaderValue.GetHashCode(_parameters);
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as MediaTypeHeaderValue;
-			if (source == null)
-				return false;
+    public static MediaTypeHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (MediaTypeHeaderValue)MediaTypeHeaderParser.SingleValueParser.ParseValue(input, null, ref index);
+    }
 
-			return string.Equals (source.media_type, media_type, StringComparison.OrdinalIgnoreCase) &&
-				source.parameters.SequenceEqual (parameters);
-		}
+    public static bool TryParse(string input, out MediaTypeHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-		public override int GetHashCode ()
-		{
-			return media_type.ToLowerInvariant ().GetHashCode () ^ HashCodeCalculator.Calculate (parameters);
-		}
+      if (MediaTypeHeaderParser.SingleValueParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (MediaTypeHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-		public static MediaTypeHeaderValue Parse (string input)
-		{
-			MediaTypeHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    internal static int GetMediaTypeLength(string input, int startIndex,
+        Func<MediaTypeHeaderValue> mediaTypeCreator, out MediaTypeHeaderValue parsedValue)
+    {
+      Debug.Assert(mediaTypeCreator != null);
+      Debug.Assert(startIndex >= 0);
 
-			throw new FormatException (input);
-		}
+      parsedValue = null;
 
-		public override string ToString ()
-		{
-			if (parameters == null)
-				return media_type;
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-			return media_type + CollectionExtensions.ToString (parameters);
-		}
-		
-		public static bool TryParse (string input, out MediaTypeHeaderValue parsedValue)
-		{
-			parsedValue = null;
+      // Caller must remove leading whitespace. If not, we'll return 0.
+      string mediaType = null;
+      int mediaTypeLength = MediaTypeHeaderValue.GetMediaTypeExpressionLength(input, startIndex, out mediaType);
 
-			var lexer = new Lexer (input);
+      if (mediaTypeLength == 0)
+      {
+        return 0;
+      }
 
-			string media;
-			List<NameValueHeaderValue> parameters = null;
-			var token = TryParseMediaType (lexer, out media);
-			if (token == null)
-				return false;
+      int current = startIndex + mediaTypeLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      MediaTypeHeaderValue mediaTypeHeader = null;
 
-			switch (token.Value.Kind) {
-			case Token.Type.SeparatorSemicolon:
-				Token t;
-				if (!NameValueHeaderValue.TryParseParameters (lexer, out parameters, out t) || t != Token.Type.End)
-					return false;
-				break;
-			case Token.Type.End:
-				break;
-			default:
-				return false;
-			}
+      // If we're not done and we have a parameter delimiter, then we have a list of parameters.
+      if ((current < input.Length) && (input[current] == ';'))
+      {
+        mediaTypeHeader = mediaTypeCreator();
+        mediaTypeHeader._mediaType = mediaType;
 
-			parsedValue = new MediaTypeHeaderValue () {
-				media_type = media,
-				parameters = parameters
-			};
+        current++; // skip delimiter.
+        int parameterLength = NameValueHeaderValue.GetNameValueListLength(input, current, ';',
+            (ObjectCollection<NameValueHeaderValue>)mediaTypeHeader.Parameters);
 
-			return true;
-		}
+        if (parameterLength == 0)
+        {
+          return 0;
+        }
 
-		internal static Token? TryParseMediaType (Lexer lexer, out string media)
-		{
-			media = null;
+        parsedValue = mediaTypeHeader;
+        return current + parameterLength - startIndex;
+      }
 
-			var token = lexer.Scan ();
-			if (token != Token.Type.Token)
-				return null;
+      // We have a media type without parameters.
+      mediaTypeHeader = mediaTypeCreator();
+      mediaTypeHeader._mediaType = mediaType;
+      parsedValue = mediaTypeHeader;
+      return current - startIndex;
+    }
 
-			if (lexer.Scan () != Token.Type.SeparatorSlash)
-				return null;
+    private static int GetMediaTypeExpressionLength(string input, int startIndex, out string mediaType)
+    {
+      Debug.Assert((input != null) && (input.Length > 0) && (startIndex < input.Length));
 
-			var token2 = lexer.Scan ();
-			if (token2 != Token.Type.Token)
-				return null;
+      // This method just parses the "type/subtype" string, it does not parse parameters.
+      mediaType = null;
 
-			media = lexer.GetStringValue (token) + "/" + lexer.GetStringValue (token2);
+      // Parse the type, i.e. <type> in media type string "<type>/<subtype>; param1=value1; param2=value2"
+      int typeLength = HttpRuleParser.GetTokenLength(input, startIndex);
 
-			return lexer.Scan ();
-		}
-	}
+      if (typeLength == 0)
+      {
+        return 0;
+      }
+
+      int current = startIndex + typeLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      // Parse the separator between type and subtype
+      if ((current >= input.Length) || (input[current] != '/'))
+      {
+        return 0;
+      }
+      current++; // skip delimiter.
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      // Parse the subtype, i.e. <subtype> in media type string "<type>/<subtype>; param1=value1; param2=value2"
+      int subtypeLength = HttpRuleParser.GetTokenLength(input, current);
+
+      if (subtypeLength == 0)
+      {
+        return 0;
+      }
+
+      // If there are no whitespace between <type> and <subtype> in <type>/<subtype> get the media type using
+      // one Substring call. Otherwise get substrings for <type> and <subtype> and combine them.
+      int mediatTypeLength = current + subtypeLength - startIndex;
+      if (typeLength + subtypeLength + 1 == mediatTypeLength)
+      {
+        mediaType = input.Substring(startIndex, mediatTypeLength);
+      }
+      else
+      {
+        mediaType = input.Substring(startIndex, typeLength) + "/" + input.Substring(current, subtypeLength);
+      }
+
+      return mediatTypeLength;
+    }
+
+    private static void CheckMediaTypeFormat(string mediaType, string parameterName)
+    {
+      if (string.IsNullOrEmpty(mediaType))
+      {
+        throw new ArgumentException("The value cannot be null or empty.", parameterName);
+      }
+
+      // When adding values using strongly typed objects, no leading/trailing LWS (whitespace) are allowed.
+      // Also no LWS between type and subtype are allowed.
+      string tempMediaType;
+      int mediaTypeLength = GetMediaTypeExpressionLength(mediaType, 0, out tempMediaType);
+      if ((mediaTypeLength == 0) || (tempMediaType.Length != mediaType.Length))
+      {
+        throw new FormatException(string.Format(System.Globalization.CultureInfo.InvariantCulture, "The format of value '{0}' is invalid.", mediaType));
+      }
+    }
+
+    // Implement ICloneable explicitly to allow derived types to "override" the implementation.
+    object ICloneable.Clone()
+    {
+      return new MediaTypeHeaderValue(this);
+    }
+  }
 }

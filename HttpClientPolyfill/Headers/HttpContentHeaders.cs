@@ -1,145 +1,203 @@
-//
-// HttpContentHeaders.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace System.Net.Http.Headers
 {
-	public sealed class HttpContentHeaders : HttpHeaders
-	{
-		readonly HttpContent content;
+  [SuppressMessage("Microsoft.Naming", "CA1710:IdentifiersShouldHaveCorrectSuffix",
+      Justification = "This is not a collection")]
+  public sealed class HttpContentHeaders : HttpHeaders
+  {
+    private static readonly Dictionary<string, HttpHeaderParser> s_parserStore = CreateParserStore();
+    private static readonly HashSet<string> s_invalidHeaders = CreateInvalidHeaders();
 
-		internal HttpContentHeaders (HttpContent content)
-			: base (HttpHeaderKind.Content)
-		{
-			this.content = content;
-		}
-		
-		public ICollection<string> Allow {
-			get {
-				return GetValues<string> ("Allow");
-			}
-		}
+    private readonly HttpContent _parent;
+    private bool _contentLengthSet;
 
-		public ICollection<string> ContentEncoding {
-			get {
-				return GetValues<string> ("Content-Encoding");
-			}
-		}
-		
-		public ContentDispositionHeaderValue ContentDisposition {
-			get {
-				return GetValue<ContentDispositionHeaderValue> ("Content-Disposition");
-			}
-			set {
-				AddOrRemove ("Content-Disposition", value);
-			}
-		}
+    private HttpHeaderValueCollection<string> _allow;
+    private HttpHeaderValueCollection<string> _contentEncoding;
+    private HttpHeaderValueCollection<string> _contentLanguage;
 
-		public ICollection<string> ContentLanguage {
-			get {
-				return GetValues<string> ("Content-Language");
-			}
-		}
+    public ICollection<string> Allow
+    {
+      get
+      {
+        if (_allow == null)
+        {
+          _allow = new HttpHeaderValueCollection<string>(KnownHeaderNames.Allow,
+              this, HeaderUtilities.TokenValidator);
+        }
+        return _allow;
+      }
+    }
 
-		public long? ContentLength {
-			get {
-				long? v = GetValue<long?> ("Content-Length");
-				if (v != null)
-					return v;
+    public ContentDispositionHeaderValue ContentDisposition
+    {
+      get { return (ContentDispositionHeaderValue)GetParsedValues(KnownHeaderNames.ContentDisposition); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ContentDisposition, value); }
+    }
 
-				v = content.LoadedBufferLength;
-				if (v != null)
-					return v;
+    // Must be a collection (and not provide properties like "GZip", "Deflate", etc.) since the 
+    // order matters!
+    public ICollection<string> ContentEncoding
+    {
+      get
+      {
+        if (_contentEncoding == null)
+        {
+          _contentEncoding = new HttpHeaderValueCollection<string>(KnownHeaderNames.ContentEncoding,
+              this, HeaderUtilities.TokenValidator);
+        }
+        return _contentEncoding;
+      }
+    }
 
-				long l;
-				if (content.TryComputeLength (out l))
-					return l;
+    public ICollection<string> ContentLanguage
+    {
+      get
+      {
+        if (_contentLanguage == null)
+        {
+          _contentLanguage = new HttpHeaderValueCollection<string>(KnownHeaderNames.ContentLanguage,
+              this, HeaderUtilities.TokenValidator);
+        }
+        return _contentLanguage;
+      }
+    }
 
-				return null;
-			}
-			set {
-				AddOrRemove ("Content-Length", value);
-			}
-		}
+    public long? ContentLength
+    {
+      get
+      {
+        // 'Content-Length' can only hold one value. So either we get 'null' back or a boxed long value.
+        object storedValue = GetParsedValues(KnownHeaderNames.ContentLength);
 
-		public Uri ContentLocation {
-			get {
-				return GetValue<Uri> ("Content-Location");
-			}
-			set {
-				AddOrRemove ("Content-Location", value);
-			}
-		}
+        // Only try to calculate the length if the user didn't set the value explicitly using the setter.
+        if (!_contentLengthSet && (storedValue == null))
+        {
+          // If we don't have a value for Content-Length in the store, try to let the content calculate
+          // it's length. If the content object is able to calculate the length, we'll store it in the
+          // store.
+          long? calculatedLength = _parent.GetComputedOrBufferLength();
 
-		public byte[] ContentMD5 {
-			get {
-				return GetValue<byte[]> ("Content-MD5");
-			}
-			set {
-				AddOrRemove ("Content-MD5", value, Parser.MD5.ToString);
-			}
-		}
+          if (calculatedLength != null)
+          {
+            SetParsedValue(KnownHeaderNames.ContentLength, (object)calculatedLength.Value);
+          }
 
-		public ContentRangeHeaderValue ContentRange {
-			get {
-				return GetValue<ContentRangeHeaderValue> ("Content-Range");
-			}
-			set {
-				AddOrRemove ("Content-Range", value);
-			}
-		}
+          return calculatedLength;
+        }
 
-		public MediaTypeHeaderValue ContentType {
-			get {
-				return GetValue<MediaTypeHeaderValue> ("Content-Type");
-			}
-			set {
-				AddOrRemove ("Content-Type", value);
-			}
-		}
+        if (storedValue == null)
+        {
+          return null;
+        }
+        else
+        {
+          return (long)storedValue;
+        }
+      }
+      set
+      {
+        SetOrRemoveParsedValue(KnownHeaderNames.ContentLength, value); // box long value
+        _contentLengthSet = true;
+      }
+    }
 
-		public DateTimeOffset? Expires {
-			get {
-				return GetValue<DateTimeOffset?> ("Expires");
-			}
-			set {
-				AddOrRemove ("Expires", value, Parser.DateTime.ToString);
-			}
-		}
+    public Uri ContentLocation
+    {
+      get { return (Uri)GetParsedValues(KnownHeaderNames.ContentLocation); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ContentLocation, value); }
+    }
 
-		public DateTimeOffset? LastModified {
-			get {
-				return GetValue<DateTimeOffset?> ("Last-Modified");
-			}
-			set {
-				AddOrRemove ("Last-Modified", value, Parser.DateTime.ToString);
-			}
-		}
-	}
+    [SuppressMessage("Microsoft.Performance", "CA1819:PropertiesShouldNotReturnArrays",
+        Justification = "In this case the 'value' is the byte array. I.e. the array is treated as a value.")]
+    public byte[] ContentMD5
+    {
+      get { return (byte[])GetParsedValues(KnownHeaderNames.ContentMD5); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ContentMD5, value); }
+    }
+
+    public ContentRangeHeaderValue ContentRange
+    {
+      get { return (ContentRangeHeaderValue)GetParsedValues(KnownHeaderNames.ContentRange); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ContentRange, value); }
+    }
+
+    public MediaTypeHeaderValue ContentType
+    {
+      get { return (MediaTypeHeaderValue)GetParsedValues(KnownHeaderNames.ContentType); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.ContentType, value); }
+    }
+
+    public DateTimeOffset? Expires
+    {
+      get { return HeaderUtilities.GetDateTimeOffsetValue(KnownHeaderNames.Expires, this); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.Expires, value); }
+    }
+
+    public DateTimeOffset? LastModified
+    {
+      get { return HeaderUtilities.GetDateTimeOffsetValue(KnownHeaderNames.LastModified, this); }
+      set { SetOrRemoveParsedValue(KnownHeaderNames.LastModified, value); }
+    }
+
+    internal HttpContentHeaders(HttpContent parent)
+    {
+      _parent = parent;
+
+      SetConfiguration(s_parserStore, s_invalidHeaders);
+    }
+
+    private static Dictionary<string, HttpHeaderParser> CreateParserStore()
+    {
+      var parserStore = new Dictionary<string, HttpHeaderParser>(11, StringComparer.OrdinalIgnoreCase);
+
+      parserStore.Add(KnownHeaderNames.Allow, GenericHeaderParser.TokenListParser);
+      parserStore.Add(KnownHeaderNames.ContentDisposition, GenericHeaderParser.ContentDispositionParser);
+      parserStore.Add(KnownHeaderNames.ContentEncoding, GenericHeaderParser.TokenListParser);
+      parserStore.Add(KnownHeaderNames.ContentLanguage, GenericHeaderParser.TokenListParser);
+      parserStore.Add(KnownHeaderNames.ContentLength, Int64NumberHeaderParser.Parser);
+      parserStore.Add(KnownHeaderNames.ContentLocation, UriHeaderParser.RelativeOrAbsoluteUriParser);
+      parserStore.Add(KnownHeaderNames.ContentMD5, ByteArrayHeaderParser.Parser);
+      parserStore.Add(KnownHeaderNames.ContentRange, GenericHeaderParser.ContentRangeParser);
+      parserStore.Add(KnownHeaderNames.ContentType, MediaTypeHeaderParser.SingleValueParser);
+      parserStore.Add(KnownHeaderNames.Expires, DateHeaderParser.Parser);
+      parserStore.Add(KnownHeaderNames.LastModified, DateHeaderParser.Parser);
+
+      return parserStore;
+    }
+
+    private static HashSet<string> CreateInvalidHeaders()
+    {
+      var invalidHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+      HttpRequestHeaders.AddKnownHeaders(invalidHeaders);
+      HttpResponseHeaders.AddKnownHeaders(invalidHeaders);
+      HttpGeneralHeaders.AddKnownHeaders(invalidHeaders);
+
+      return invalidHeaders;
+    }
+
+    internal static void AddKnownHeaders(HashSet<string> headerSet)
+    {
+      Debug.Assert(headerSet != null);
+
+      headerSet.Add(KnownHeaderNames.Allow);
+      headerSet.Add(KnownHeaderNames.ContentDisposition);
+      headerSet.Add(KnownHeaderNames.ContentEncoding);
+      headerSet.Add(KnownHeaderNames.ContentLanguage);
+      headerSet.Add(KnownHeaderNames.ContentLength);
+      headerSet.Add(KnownHeaderNames.ContentLocation);
+      headerSet.Add(KnownHeaderNames.ContentMD5);
+      headerSet.Add(KnownHeaderNames.ContentRange);
+      headerSet.Add(KnownHeaderNames.ContentType);
+      headerSet.Add(KnownHeaderNames.Expires);
+      headerSet.Add(KnownHeaderNames.LastModified);
+    }
+  }
 }

@@ -1,144 +1,161 @@
-//
-// TransferCodingHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class TransferCodingHeaderValue : ICloneable
-	{
-		internal string value;
-		internal List<NameValueHeaderValue> parameters;
+  public class TransferCodingHeaderValue : ICloneable
+  {
+    // Use ObjectCollection<T> since we may have multiple parameters with the same name.
+    private ObjectCollection<NameValueHeaderValue> _parameters;
+    private string _value;
 
-		public TransferCodingHeaderValue (string value)
-		{
-			Parser.Token.Check (value);
-			this.value = value;
-		}
+    public string Value
+    {
+      get { return _value; }
+    }
 
-		protected TransferCodingHeaderValue (TransferCodingHeaderValue source)
-		{
-			this.value = source.value;
-			if (source.parameters != null) {
-				foreach (var p in source.parameters) {
-					Parameters.Add (new NameValueHeaderValue (p));
-				}
-			}
-		}
+    public ICollection<NameValueHeaderValue> Parameters
+    {
+      get
+      {
+        if (_parameters == null)
+        {
+          _parameters = new ObjectCollection<NameValueHeaderValue>();
+        }
+        return _parameters;
+      }
+    }
 
-		internal TransferCodingHeaderValue ()
-		{
-		}
+    internal TransferCodingHeaderValue()
+    {
+    }
 
-		public ICollection<NameValueHeaderValue> Parameters {
-			get {
-				return parameters ?? (parameters = new List<NameValueHeaderValue> ());
-			}
-		}
+    protected TransferCodingHeaderValue(TransferCodingHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public string Value {
-			get {
-				return value;
-			}
-		}
+      _value = source._value;
 
-		object ICloneable.Clone ()
-		{
-			return new TransferCodingHeaderValue (this);
-		}
+      if (source._parameters != null)
+      {
+        foreach (var parameter in source._parameters)
+        {
+          this.Parameters.Add((NameValueHeaderValue)((ICloneable)parameter).Clone());
+        }
+      }
+    }
 
-		public override bool Equals (object obj)
-		{
-			var fchv = obj as TransferCodingHeaderValue;
-			return fchv != null &&
-				string.Equals (value, fchv.value, StringComparison.OrdinalIgnoreCase) &&
-				parameters.SequenceEqual (fchv.parameters);
-		}
+    public TransferCodingHeaderValue(string value)
+    {
+      HeaderUtilities.CheckValidToken(value, nameof(value));
+      _value = value;
+    }
 
-		public override int GetHashCode ()
-		{
-			var hc = value.ToLowerInvariant ().GetHashCode ();
-			if (parameters != null)
-				hc ^= HashCodeCalculator.Calculate (parameters);
+    public static TransferCodingHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (TransferCodingHeaderValue)TransferCodingHeaderParser.SingleValueParser.ParseValue(
+          input, null, ref index);
+    }
 
-			return hc;
-		}
+    public static bool TryParse(string input, out TransferCodingHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-		public static TransferCodingHeaderValue Parse (string input)
-		{
-			TransferCodingHeaderValue value;
+      if (TransferCodingHeaderParser.SingleValueParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (TransferCodingHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-			if (TryParse (input, out value))
-				return value;
+    internal static int GetTransferCodingLength(string input, int startIndex,
+        Func<TransferCodingHeaderValue> transferCodingCreator, out TransferCodingHeaderValue parsedValue)
+    {
+      Debug.Assert(transferCodingCreator != null);
+      Debug.Assert(startIndex >= 0);
 
-			throw new FormatException (input);
-		}
+      parsedValue = null;
 
-		public override string ToString ()
-		{
-			return value + CollectionExtensions.ToString (parameters);
-		}
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-		public static bool TryParse (string input, out TransferCodingHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+      // Caller must remove leading whitespace. If not, we'll return 0.
+      int valueLength = HttpRuleParser.GetTokenLength(input, startIndex);
 
-			parsedValue = null;
-			return false;
-		}
+      if (valueLength == 0)
+      {
+        return 0;
+      }
 
-		internal static bool TryParse (string input, int minimalCount, out List<TransferCodingHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}	
+      string value = input.Substring(startIndex, valueLength);
+      int current = startIndex + valueLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      TransferCodingHeaderValue transferCodingHeader = null;
 
-		static bool TryParseElement (Lexer lexer, out TransferCodingHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
+      // If we're not done and we have a parameter delimiter, then we have a list of parameters.
+      if ((current < input.Length) && (input[current] == ';'))
+      {
+        transferCodingHeader = transferCodingCreator();
+        transferCodingHeader._value = value;
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+        current++; // skip delimiter.
+        int parameterLength = NameValueHeaderValue.GetNameValueListLength(input, current, ';',
+            (ObjectCollection<NameValueHeaderValue>)transferCodingHeader.Parameters);
 
-			var result = new TransferCodingHeaderValue ();
-			result.value = lexer.GetStringValue (t);
+        if (parameterLength == 0)
+        {
+          return 0;
+        }
 
-			t = lexer.Scan ();
+        parsedValue = transferCodingHeader;
+        return current + parameterLength - startIndex;
+      }
 
-			// Parameters parsing
-			if (t == Token.Type.SeparatorSemicolon && (!NameValueHeaderValue.TryParseParameters (lexer, out result.parameters, out t) || t != Token.Type.End))
-				return false;
+      // We have a transfer coding without parameters.
+      transferCodingHeader = transferCodingCreator();
+      transferCodingHeader._value = value;
+      parsedValue = transferCodingHeader;
+      return current - startIndex;
+    }
 
-			parsedValue = result;
-			return true;
-		}
-	}
+    public override string ToString()
+    {
+      return _value + NameValueHeaderValue.ToString(_parameters, ';', true);
+    }
+
+    public override bool Equals(object obj)
+    {
+      TransferCodingHeaderValue other = obj as TransferCodingHeaderValue;
+
+      if (other == null)
+      {
+        return false;
+      }
+
+      return string.Equals(_value, other._value, StringComparison.OrdinalIgnoreCase) &&
+          HeaderUtilities.AreEqualCollections(_parameters, other._parameters);
+    }
+
+    public override int GetHashCode()
+    {
+      // The value string is case-insensitive.
+      return StringComparer.OrdinalIgnoreCase.GetHashCode(_value) ^ NameValueHeaderValue.GetHashCode(_parameters);
+    }
+
+    // Implement ICloneable explicitly to allow derived types to "override" the implementation.
+    object ICloneable.Clone()
+    {
+      return new TransferCodingHeaderValue(this);
+    }
+  }
 }

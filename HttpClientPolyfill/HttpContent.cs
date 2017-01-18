@@ -220,5 +220,28 @@ namespace System.Net.Http
 
     protected internal abstract Task SerializeToStreamAsync(Stream stream, TransportContext context);
     protected internal abstract bool TryComputeLength(out long length);
+
+    private bool _canCalculateLength;
+    internal long? GetComputedOrBufferLength()
+    {
+      if (disposed)
+        return null;
+      
+      // If we already tried to calculate the length, but the derived class returned 'false', then don't try
+      // again; just return null.
+      if (_canCalculateLength)
+      {
+        long length = 0;
+        if (TryComputeLength(out length))
+        {
+          return length;
+        }
+
+        // Set flag to make sure next time we don't try to compute the length, since we know that we're unable
+        // to do so.
+        _canCalculateLength = false;
+      }
+      return null;
+    }
   }
 }

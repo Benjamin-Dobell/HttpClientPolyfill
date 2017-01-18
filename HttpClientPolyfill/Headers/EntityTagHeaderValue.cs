@@ -1,147 +1,204 @@
-//
-// EntityTagHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class EntityTagHeaderValue : ICloneable
-	{
-		static readonly EntityTagHeaderValue any = new EntityTagHeaderValue () { Tag = "*" };
+  public class EntityTagHeaderValue : ICloneable
+  {
+    private static EntityTagHeaderValue s_any;
 
-		public EntityTagHeaderValue (string tag)
-		{
-			Parser.Token.CheckQuotedString (tag);
-			Tag = tag;
-		}
+    private string _tag;
+    private bool _isWeak;
 
-		public EntityTagHeaderValue (string tag, bool isWeak)
-			: this (tag)
-		{
-			IsWeak = isWeak;
-		}
+    public string Tag
+    {
+      get { return _tag; }
+    }
 
-		internal EntityTagHeaderValue ()
-		{
-		}
+    public bool IsWeak
+    {
+      get { return _isWeak; }
+    }
 
-		public static EntityTagHeaderValue Any {
-			get {
-				return any;
-			}
-		}
+    public static EntityTagHeaderValue Any
+    {
+      get
+      {
+        if (s_any == null)
+        {
+          s_any = new EntityTagHeaderValue();
+          s_any._tag = "*";
+          s_any._isWeak = false;
+        }
+        return s_any;
+      }
+    }
 
-		public bool IsWeak { get; internal set; }
-		public string Tag { get; internal set; }
+    public EntityTagHeaderValue(string tag)
+        : this(tag, false)
+    {
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public EntityTagHeaderValue(string tag, bool isWeak)
+    {
+      if (string.IsNullOrEmpty(tag))
+      {
+        throw new ArgumentException("The value cannot be null or empty.", nameof(tag));
+      }
+      int length = 0;
+      if ((HttpRuleParser.GetQuotedStringLength(tag, 0, out length) != HttpParseResult.Parsed) ||
+          (length != tag.Length))
+      {
+        // Note that we don't allow 'W/' prefixes for weak ETags in the 'tag' parameter. If the user wants to
+        // add a weak ETag, he can set 'isWeak' to true.
+        throw new FormatException("The specified value is not a valid quoted string.");
+      }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as EntityTagHeaderValue;
-			return source != null && source.Tag == Tag &&
-				string.Equals (source.Tag, Tag, StringComparison.Ordinal);
-		}
+      _tag = tag;
+      _isWeak = isWeak;
+    }
 
-		public override int GetHashCode ()
-		{
-			return IsWeak.GetHashCode () ^ Tag.GetHashCode ();
-		}
+    private EntityTagHeaderValue(EntityTagHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public static EntityTagHeaderValue Parse (string input)
-		{
-			EntityTagHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      _tag = source._tag;
+      _isWeak = source._isWeak;
+    }
 
-			throw new FormatException (input);
-		}
+    private EntityTagHeaderValue()
+    {
+    }
 
-		public static bool TryParse (string input, out EntityTagHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+    public override string ToString()
+    {
+      if (_isWeak)
+      {
+        return "W/" + _tag;
+      }
+      return _tag;
+    }
 
-			parsedValue = null;
-			return false;
-		}
+    public override bool Equals(object obj)
+    {
+      EntityTagHeaderValue other = obj as EntityTagHeaderValue;
 
-		static bool TryParseElement (Lexer lexer, out EntityTagHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
+      if (other == null)
+      {
+        return false;
+      }
 
-			t = lexer.Scan ();
-			bool is_weak = false;
+      // Since the tag is a quoted-string we treat it case-sensitive.
+      return ((_isWeak == other._isWeak) && string.Equals(_tag, other._tag, StringComparison.Ordinal));
+    }
 
-			if (t == Token.Type.Token) {
-				var s = lexer.GetStringValue (t);
-				if (s == "*") {
-					parsedValue = any;
+    public override int GetHashCode()
+    {
+      // Since the tag is a quoted-string we treat it case-sensitive.
+      return _tag.GetHashCode() ^ _isWeak.GetHashCode();
+    }
 
-					t = lexer.Scan ();
-					return true;
-				}
+    public static EntityTagHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (EntityTagHeaderValue)GenericHeaderParser.SingleValueEntityTagParser.ParseValue(
+          input, null, ref index);
+    }
 
-				if (s != "W" || lexer.PeekChar () != '/')
-					return false;
+    public static bool TryParse(string input, out EntityTagHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-				is_weak = true;
-				lexer.EatChar ();
-				t = lexer.Scan ();
-			}
+      if (GenericHeaderParser.SingleValueEntityTagParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (EntityTagHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-			if (t != Token.Type.QuotedString)
-				return false;
+    internal static int GetEntityTagLength(string input, int startIndex, out EntityTagHeaderValue parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-			parsedValue = new EntityTagHeaderValue ();
-			parsedValue.Tag = lexer.GetStringValue (t);
-			parsedValue.IsWeak = is_weak;
+      parsedValue = null;
 
-			t = lexer.Scan ();
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-			return true;
-		}
+      // Caller must remove leading whitespace. If not, we'll return 0.
+      bool isWeak = false;
+      int current = startIndex;
 
-		internal static bool TryParse (string input, int minimalCount, out List<EntityTagHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+      char firstChar = input[startIndex];
+      if (firstChar == '*')
+      {
+        // We have '*' value, indicating "any" ETag.
+        parsedValue = Any;
+        current++;
+      }
+      else
+      {
+        // The RFC defines 'W/' as prefix, but we'll be flexible and also accept lower-case 'w'.
+        if ((firstChar == 'W') || (firstChar == 'w'))
+        {
+          current++;
+          // We need at least 3 more chars: the '/' character followed by two quotes.
+          if ((current + 2 >= input.Length) || (input[current] != '/'))
+          {
+            return 0;
+          }
+          isWeak = true;
+          current++; // we have a weak-entity tag.
+          current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+        }
 
-		public override string ToString ()
-		{
-			return IsWeak ?
-				"W/" + Tag :
-				Tag;
-		}
-	}
+        int tagStartIndex = current;
+        int tagLength = 0;
+        if (HttpRuleParser.GetQuotedStringLength(input, current, out tagLength) != HttpParseResult.Parsed)
+        {
+          return 0;
+        }
+
+        parsedValue = new EntityTagHeaderValue();
+        if (tagLength == input.Length)
+        {
+          // Most of the time we'll have strong ETags without leading/trailing whitespace.
+          Debug.Assert(startIndex == 0);
+          Debug.Assert(!isWeak);
+          parsedValue._tag = input;
+          parsedValue._isWeak = false;
+        }
+        else
+        {
+          parsedValue._tag = input.Substring(tagStartIndex, tagLength);
+          parsedValue._isWeak = isWeak;
+        }
+
+        current = current + tagLength;
+      }
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      return current - startIndex;
+    }
+
+    object ICloneable.Clone()
+    {
+      if (this == s_any)
+      {
+        return s_any;
+      }
+      else
+      {
+        return new EntityTagHeaderValue(this);
+      }
+    }
+  }
 }

@@ -31,6 +31,7 @@ using System.Threading.Tasks;
 using System.Collections.Specialized;
 using System.Net.Http.Headers;
 using HttpClientLibrary;
+using System.Collections.Generic;
 
 namespace System.Net.Http
 {
@@ -285,14 +286,7 @@ namespace System.Net.Http
       wr.Method = request.Method.Method;
       wr.ProtocolVersion = request.Version;
 
-      if (wr.ProtocolVersion == HttpVersion.Version10)
-      {
-        wr.KeepAlive = request.Headers.ConnectionKeepAlive;
-      }
-      else
-      {
-        wr.KeepAlive = request.Headers.ConnectionClose != true;
-      }
+      wr.KeepAlive = request.Headers.ConnectionClose != true;
 
       wr.ServicePoint.Expect100Continue = request.Headers.ExpectContinue == true;
 
@@ -335,13 +329,20 @@ namespace System.Net.Http
       return wr;
     }
 
+    private static HashSet<string> _contentHeaders = new HashSet<string>();
+
+    static HttpClientHandler()
+    {
+      HttpContentHeaders.AddKnownHeaders(_contentHeaders);
+    }
+
     HttpResponseMessage CreateResponseMessage(HttpWebResponse wr, HttpRequestMessage requestMessage, CancellationToken cancellationToken)
     {
       var response = new HttpResponseMessage(wr.StatusCode);
       response.RequestMessage = requestMessage;
       response.ReasonPhrase = wr.StatusDescription;
       response.Content = new StreamContent(wr.GetResponseStream(), cancellationToken);
-
+      
       var headers = wr.Headers;
       for (int i = 0; i < headers.Count; ++i)
       {
@@ -349,7 +350,7 @@ namespace System.Net.Http
         var value = headers.GetValues(i);
 
         HttpHeaders item_headers;
-        if (HttpHeaders.GetKnownHeaderKind(key) == Headers.HttpHeaderKind.Content)
+        if (_contentHeaders.Contains(key))
           item_headers = response.Content.Headers;
         else
           item_headers = response.Headers;
@@ -490,7 +491,10 @@ namespace System.Net.Http
             break;
 
           case "transfer-encoding":
-            request.TransferEncoding = headers.TransferEncoding.ToString();
+            if (headers.TransferEncodingChunked == true)
+              request.SendChunked = true;
+            else
+              request.TransferEncoding = headers.TransferEncoding.ToString();
             break;
 
           case "user-agent":

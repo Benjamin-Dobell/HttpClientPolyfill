@@ -1,225 +1,191 @@
-//
-// RangeHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 
 namespace System.Net.Http.Headers
 {
-	public class RangeHeaderValue : ICloneable
-	{
-		List<RangeItemHeaderValue> ranges;
-		string unit;
+  public class RangeHeaderValue : ICloneable
+  {
+    private string _unit;
+    private ObjectCollection<RangeItemHeaderValue> _ranges;
 
-		public RangeHeaderValue ()
-		{
-			unit = "bytes";
-		}
+    public string Unit
+    {
+      get { return _unit; }
+      set
+      {
+        HeaderUtilities.CheckValidToken(value, nameof(value));
+        _unit = value;
+      }
+    }
 
-		public RangeHeaderValue (long? from, long? to)
-			: this ()
-		{
-			Ranges.Add (new RangeItemHeaderValue (from, to));
-		}
+    public ICollection<RangeItemHeaderValue> Ranges
+    {
+      get
+      {
+        if (_ranges == null)
+        {
+          _ranges = new ObjectCollection<RangeItemHeaderValue>();
+        }
+        return _ranges;
+      }
+    }
 
-		private RangeHeaderValue (RangeHeaderValue source)
-			: this ()
-		{
-			if (source.ranges != null) {
-				foreach (var item in source.ranges)
-					Ranges.Add (item);
-			}
-		}
+    public RangeHeaderValue()
+    {
+      _unit = HeaderUtilities.BytesUnit;
+    }
 
-		public ICollection<RangeItemHeaderValue> Ranges {
-			get {
-				return ranges ?? (ranges = new List<RangeItemHeaderValue> ());
-			}
-		}
+    public RangeHeaderValue(long? from, long? to)
+    {
+      // convenience ctor: "Range: bytes=from-to"
+      _unit = HeaderUtilities.BytesUnit;
+      Ranges.Add(new RangeItemHeaderValue(from, to));
+    }
 
-		public string Unit {
-			get {
-				return unit;
-			}
-			set {
-				if (value == null)
-					throw new ArgumentNullException ("Unit");
+    private RangeHeaderValue(RangeHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-				Parser.Token.Check (value);
+      _unit = source._unit;
+      if (source._ranges != null)
+      {
+        foreach (RangeItemHeaderValue range in source._ranges)
+        {
+          this.Ranges.Add((RangeItemHeaderValue)((ICloneable)range).Clone());
+        }
+      }
+    }
 
-				unit = value;
-			}
-		}
+    public override string ToString()
+    {
+      StringBuilder sb = new StringBuilder(_unit);
+      sb.Append('=');
 
-		object ICloneable.Clone ()
-		{
-			return new RangeHeaderValue (this);
-		}
+      if (_ranges != null)
+      {
+        bool first = true;
+        foreach (RangeItemHeaderValue range in _ranges)
+        {
+          if (first)
+          {
+            first = false;
+          }
+          else
+          {
+            sb.Append(", ");
+          }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as RangeHeaderValue;
-			if (source == null)
-				return false;
+          sb.Append(range.From);
+          sb.Append('-');
+          sb.Append(range.To);
+        }
+      }
 
-			return string.Equals (source.Unit, Unit, StringComparison.OrdinalIgnoreCase) &&
-				source.ranges.SequenceEqual (ranges);
-		}
+      return sb.ToString();
+    }
 
-		public override int GetHashCode ()
-		{
-			return Unit.ToLowerInvariant ().GetHashCode () ^ HashCodeCalculator.Calculate (ranges);
-		}
+    public override bool Equals(object obj)
+    {
+      RangeHeaderValue other = obj as RangeHeaderValue;
 
-		public static RangeHeaderValue Parse (string input)
-		{
-			RangeHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      if (other == null)
+      {
+        return false;
+      }
 
-			throw new FormatException (input);
-		}
+      return string.Equals(_unit, other._unit, StringComparison.OrdinalIgnoreCase) &&
+          HeaderUtilities.AreEqualCollections(_ranges, other._ranges);
+    }
 
-		public static bool TryParse (string input, out RangeHeaderValue parsedValue)
-		{
-			parsedValue = null;
+    public override int GetHashCode()
+    {
+      int result = StringComparer.OrdinalIgnoreCase.GetHashCode(_unit);
 
-			var lexer = new Lexer (input);
-			var t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      if (_ranges != null)
+      {
+        foreach (RangeItemHeaderValue range in _ranges)
+        {
+          result = result ^ range.GetHashCode();
+        }
+      }
 
-			var value = new RangeHeaderValue ();
-			value.unit = lexer.GetStringValue (t);
+      return result;
+    }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.SeparatorEqual)
-				return false;
+    public static RangeHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (RangeHeaderValue)GenericHeaderParser.RangeParser.ParseValue(input, null, ref index);
+    }
 
-			bool token_read;
-			do {
-				int? from = null, to = null;
-				int number;
-				token_read = false;
+    public static bool TryParse(string input, out RangeHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-				t = lexer.Scan ();
-				switch (t.Kind) {
-				case Token.Type.SeparatorDash:
-					t = lexer.Scan ();
-					if (!lexer.TryGetNumericValue (t, out number))
-						return false;
+      if (GenericHeaderParser.RangeParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (RangeHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-					to = number;
-					break;
-				case Token.Type.Token:
-					string s = lexer.GetStringValue (t);
-					var values = s.Split (new [] { '-' }, StringSplitOptions.RemoveEmptyEntries);
-					if (!int.TryParse (values[0], out number))
-						return false;
+    internal static int GetRangeLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-					switch (values.Length) {
-					case 1:
-						t = lexer.Scan ();
-						from = number;
-						switch (t.Kind) {
-						case Token.Type.SeparatorDash:
-							t = lexer.Scan ();
-							if (t != Token.Type.Token) {
-								token_read = true;
-								break;
-							}
+      parsedValue = null;
 
-							if (!lexer.TryGetNumericValue (t, out number))
-								return false;
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-							to = number;
-							if (to < from)
-								return false;
+      // Parse the unit string: <unit> in '<unit>=<from1>-<to1>, <from2>-<to2>'
+      int unitLength = HttpRuleParser.GetTokenLength(input, startIndex);
 
-							break;
-						case Token.Type.End:
-							if (s.Length > 0 && s [s.Length - 1] != '-')
-								return false;
+      if (unitLength == 0)
+      {
+        return 0;
+      }
 
-							token_read = true;
-							break;
-						case Token.Type.SeparatorComma:
-							token_read = true;
-							break;
-						default:
-							return false;
-						}
-						break;
-					case 2:
-						from = number;
+      RangeHeaderValue result = new RangeHeaderValue();
+      result._unit = input.Substring(startIndex, unitLength);
+      int current = startIndex + unitLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
 
-						if (!int.TryParse (values[1], out number))
-							return false;
+      if ((current == input.Length) || (input[current] != '='))
+      {
+        return 0;
+      }
 
-						to = number;
-						if (to < from)
-							return false;
+      current++; // skip '=' separator
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
 
-						break;
-					default:
-						return false;
-					}
+      int rangesLength = RangeItemHeaderValue.GetRangeItemListLength(input, current, result.Ranges);
 
-					break;
-				default:
-					return false;
-				}
+      if (rangesLength == 0)
+      {
+        return 0;
+      }
 
-				value.Ranges.Add (new RangeItemHeaderValue (from, to));
-				if (!token_read)
-					t = lexer.Scan ();
+      current = current + rangesLength;
+      Debug.Assert(current == input.Length, "GetRangeItemListLength() should consume the whole string or fail.");
 
-			} while (t == Token.Type.SeparatorComma);
+      parsedValue = result;
+      return current - startIndex;
+    }
 
-			if (t != Token.Type.End)
-				return false;
-
-			parsedValue = value;
-			return true;
-		}
-
-		public override string ToString ()
-		{
-			var sb = new StringBuilder (unit);
-			sb.Append ("=");
-			for (int i = 0; i < Ranges.Count; ++i) {
-				if (i > 0)
-					sb.Append (", ");
-
-				sb.Append (ranges[i]);
-			}
-
-			return sb.ToString ();
-		}
-	}
+    object ICloneable.Clone()
+    {
+      return new RangeHeaderValue(this);
+    }
+  }
 }

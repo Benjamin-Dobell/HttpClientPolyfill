@@ -1,123 +1,137 @@
-//
-// HttpMethod.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+using System.Diagnostics;
 
 namespace System.Net.Http
 {
   public class HttpMethod : IEquatable<HttpMethod>
   {
-    static readonly HttpMethod delete_method = new HttpMethod("DELETE");
-    static readonly HttpMethod get_method = new HttpMethod("GET");
-    static readonly HttpMethod head_method = new HttpMethod("HEAD");
-    static readonly HttpMethod options_method = new HttpMethod("OPTIONS");
-    static readonly HttpMethod post_method = new HttpMethod("POST");
-    static readonly HttpMethod put_method = new HttpMethod("PUT");
-    static readonly HttpMethod trace_method = new HttpMethod("TRACE");
+    private readonly string _method;
+    private int _hashcode;
 
-    readonly string method;
+    private static readonly HttpMethod s_getMethod = new HttpMethod("GET");
+    private static readonly HttpMethod s_putMethod = new HttpMethod("PUT");
+    private static readonly HttpMethod s_postMethod = new HttpMethod("POST");
+    private static readonly HttpMethod s_deleteMethod = new HttpMethod("DELETE");
+    private static readonly HttpMethod s_headMethod = new HttpMethod("HEAD");
+    private static readonly HttpMethod s_optionsMethod = new HttpMethod("OPTIONS");
+    private static readonly HttpMethod s_traceMethod = new HttpMethod("TRACE");
 
-    public HttpMethod(string method)
-    {
-      if (string.IsNullOrEmpty(method))
-        throw new ArgumentException("method");
-
-      Headers.Parser.Token.Check(method);
-
-      this.method = method;
-    }
-
-    public static HttpMethod Delete
-    {
-      get
-      {
-        return delete_method;
-      }
-    }
+    // Don't expose CONNECT as static property, since it's used by the transport to connect to a proxy.
+    // CONNECT is not used by users directly.
 
     public static HttpMethod Get
     {
-      get
-      {
-        return get_method;
-      }
-    }
-
-    public static HttpMethod Head
-    {
-      get
-      {
-        return head_method;
-      }
-    }
-
-    public string Method
-    {
-      get
-      {
-        return method;
-      }
-    }
-
-    public static HttpMethod Options
-    {
-      get
-      {
-        return options_method;
-      }
-    }
-
-    public static HttpMethod Post
-    {
-      get
-      {
-        return post_method;
-      }
+      get { return s_getMethod; }
     }
 
     public static HttpMethod Put
     {
-      get
-      {
-        return put_method;
-      }
+      get { return s_putMethod; }
+    }
+
+    public static HttpMethod Post
+    {
+      get { return s_postMethod; }
+    }
+
+    public static HttpMethod Delete
+    {
+      get { return s_deleteMethod; }
+    }
+
+    public static HttpMethod Head
+    {
+      get { return s_headMethod; }
+    }
+
+    public static HttpMethod Options
+    {
+      get { return s_optionsMethod; }
     }
 
     public static HttpMethod Trace
     {
-      get
+      get { return s_traceMethod; }
+    }
+
+    public string Method
+    {
+      get { return _method; }
+    }
+
+    public HttpMethod(string method)
+    {
+      if (string.IsNullOrEmpty(method))
       {
-        return trace_method;
+        throw new ArgumentException("The value cannot be null or empty.", nameof(method));
       }
+      if (HttpRuleParser.GetTokenLength(method, 0) != method.Length)
+      {
+        throw new FormatException("The format of the HTTP method is invalid.");
+      }
+
+      _method = method;
+    }
+
+    #region IEquatable<HttpMethod> Members
+
+    public bool Equals(HttpMethod other)
+    {
+      if ((object)other == null)
+      {
+        return false;
+      }
+
+      if (object.ReferenceEquals(_method, other._method))
+      {
+        // Strings are static, so there is a good chance that two equal methods use the same reference
+        // (unless they differ in case).
+        return true;
+      }
+
+      return string.Equals(_method, other._method, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
+
+    public override bool Equals(object obj)
+    {
+      return Equals(obj as HttpMethod);
+    }
+
+    public override int GetHashCode()
+    {
+      if (_hashcode == 0)
+      {
+        // If _method is already uppercase, _method.GetHashCode() can be
+        // used instead of _method.ToUpperInvariant().GetHashCode(),
+        // avoiding the unnecessary extra string allocation.
+        _hashcode = IsUpperAscii(_method) ?
+            _method.GetHashCode() :
+            _method.ToUpperInvariant().GetHashCode();
+      }
+
+      return _hashcode;
+    }
+
+    public override string ToString()
+    {
+      return _method.ToString();
     }
 
     public static bool operator ==(HttpMethod left, HttpMethod right)
     {
-      if ((object)left == null || (object)right == null)
-        return ReferenceEquals(left, right);
+      if ((object)left == null)
+      {
+        return ((object)right == null);
+      }
+      else if ((object)right == null)
+      {
+        return ((object)left == null);
+      }
 
       return left.Equals(right);
     }
@@ -127,25 +141,18 @@ namespace System.Net.Http
       return !(left == right);
     }
 
-    public bool Equals(HttpMethod other)
+    private static bool IsUpperAscii(string value)
     {
-      return string.Equals(method, other.method, StringComparison.OrdinalIgnoreCase);
-    }
+      for (int i = 0; i < value.Length; i++)
+      {
+        char c = value[i];
+        if (!(c >= 'A' && c <= 'Z'))
+        {
+          return false;
+        }
+      }
 
-    public override bool Equals(object obj)
-    {
-      var other = obj as HttpMethod;
-      return !ReferenceEquals(other, null) && Equals(other);
-    }
-
-    public override int GetHashCode()
-    {
-      return method.GetHashCode();
-    }
-
-    public override string ToString()
-    {
-      return method;
+      return true;
     }
   }
 }

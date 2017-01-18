@@ -1,106 +1,66 @@
-//
-// MediaTypeWithQualityHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System;
 
 namespace System.Net.Http.Headers
 {
-	public sealed class MediaTypeWithQualityHeaderValue : MediaTypeHeaderValue
-	{
-		public MediaTypeWithQualityHeaderValue (string mediaType)
-			: base (mediaType)
-		{
-		}
+  public sealed class MediaTypeWithQualityHeaderValue : MediaTypeHeaderValue, ICloneable
+  {
+    public double? Quality
+    {
+      get { return HeaderUtilities.GetQuality((ObjectCollection<NameValueHeaderValue>)Parameters); }
+      set { HeaderUtilities.SetQuality((ObjectCollection<NameValueHeaderValue>)Parameters, value); }
+    }
 
-		public MediaTypeWithQualityHeaderValue (string mediaType, double quality)
-			: this (mediaType)
-		{
-			Quality = quality;
-		}
+    internal MediaTypeWithQualityHeaderValue()
+        : base()
+    {
+      // Used by the parser to create a new instance of this type.
+    }
 
-		private MediaTypeWithQualityHeaderValue ()
-		{
-		}
+    public MediaTypeWithQualityHeaderValue(string mediaType)
+        : base(mediaType)
+    {
+    }
 
-		public double? Quality {
-			get {
-				return QualityValue.GetValue (parameters);
-			}
-			set {
-				QualityValue.SetValue (ref parameters, value);
-			}
-		}
+    public MediaTypeWithQualityHeaderValue(string mediaType, double quality)
+        : base(mediaType)
+    {
+      Quality = quality;
+    }
 
-		public new static MediaTypeWithQualityHeaderValue Parse (string input)
-		{
-			MediaTypeWithQualityHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    private MediaTypeWithQualityHeaderValue(MediaTypeWithQualityHeaderValue source)
+        : base(source)
+    {
+      // No additional members to initialize here. This constructor is used by Clone().
+    }
 
-			throw new FormatException ();
-		}
+    object ICloneable.Clone()
+    {
+      return new MediaTypeWithQualityHeaderValue(this);
+    }
 
-		public static bool TryParse (string input, out MediaTypeWithQualityHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+    public static new MediaTypeWithQualityHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (MediaTypeWithQualityHeaderValue)MediaTypeHeaderParser.SingleValueWithQualityParser.ParseValue(
+          input, null, ref index);
+    }
 
-			parsedValue = null;
-			return false;
-		}
+    public static bool TryParse(string input, out MediaTypeWithQualityHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-		static bool TryParseElement (Lexer lexer, out MediaTypeWithQualityHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
-
-			string media;
-			List<NameValueHeaderValue> parameters = null;
-			var token = TryParseMediaType (lexer, out media);
-			if (token == null) {
-				t = Token.Empty;
-				return false;
-			}
-
-			t = token.Value;
-			if (t == Token.Type.SeparatorSemicolon && (!NameValueHeaderValue.TryParseParameters (lexer, out parameters, out t) || t != Token.Type.End))
-				return false;
-
-			parsedValue = new MediaTypeWithQualityHeaderValue ();
-			parsedValue.media_type = media;
-			parsedValue.parameters = parameters;
-			return true;
-		}
-
-		internal static bool TryParse (string input, int minimalCount, out List<MediaTypeWithQualityHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
-	}
+      if (MediaTypeHeaderParser.SingleValueWithQualityParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (MediaTypeWithQualityHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
+  }
 }

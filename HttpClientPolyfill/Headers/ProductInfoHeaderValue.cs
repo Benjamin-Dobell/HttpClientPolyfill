@@ -1,182 +1,180 @@
-//
-// ProductInfoHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class ProductInfoHeaderValue : ICloneable
-	{
-		public ProductInfoHeaderValue (ProductHeaderValue product)
-		{
-			if (product == null)
-				throw new ArgumentNullException ();
+  public class ProductInfoHeaderValue : ICloneable
+  {
+    private ProductHeaderValue _product;
+    private string _comment;
 
-			Product = product;
-		}
+    public ProductHeaderValue Product
+    {
+      get { return _product; }
+    }
 
-		public ProductInfoHeaderValue (string comment)
-		{
-			Parser.Token.CheckComment (comment);
-			Comment = comment;
-		}
+    public string Comment
+    {
+      get { return _comment; }
+    }
 
-		public ProductInfoHeaderValue (string productName, string productVersion)
-		{
-			Product = new ProductHeaderValue (productName, productVersion);
-		}
+    public ProductInfoHeaderValue(string productName, string productVersion)
+        : this(new ProductHeaderValue(productName, productVersion))
+    {
+    }
 
-		private ProductInfoHeaderValue ()
-		{
-		}
+    public ProductInfoHeaderValue(ProductHeaderValue product)
+    {
+      if (product == null)
+      {
+        throw new ArgumentNullException(nameof(product));
+      }
 
-		public string Comment { get; private set; }
-		public ProductHeaderValue Product { get; private set; }
+      _product = product;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public ProductInfoHeaderValue(string comment)
+    {
+      HeaderUtilities.CheckValidComment(comment, nameof(comment));
+      _comment = comment;
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as ProductInfoHeaderValue;
-			if (source == null)
-				return false;
+    private ProductInfoHeaderValue(ProductInfoHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-			return Product != null ?
-				Product.Equals (source.Product) :
-				source.Comment == Comment;
-		}
+      _product = source._product;
+      _comment = source._comment;
+    }
 
-		public override int GetHashCode ()
-		{
-			return Product != null ?
-				Product.GetHashCode () :
-				Comment.GetHashCode ();
-		}
+    private ProductInfoHeaderValue()
+    {
+    }
 
-		public static ProductInfoHeaderValue Parse (string input)
-		{
-			ProductInfoHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    public override string ToString()
+    {
+      if (_product == null)
+      {
+        return _comment;
+      }
+      return _product.ToString();
+    }
 
-			throw new FormatException (input);
-		}
-		
-		public static bool TryParse (string input, out ProductInfoHeaderValue parsedValue)
-		{
-			parsedValue = null;
+    public override bool Equals(object obj)
+    {
+      ProductInfoHeaderValue other = obj as ProductInfoHeaderValue;
 
-			var lexer = new Lexer (input);
-			if (!TryParseElement (lexer, out parsedValue) || parsedValue == null)
-				return false;
+      if (other == null)
+      {
+        return false;
+      }
 
-			if (lexer.Scan () != Token.Type.End) {
-				parsedValue = null;
-				return false;
-			}	
+      if (_product == null)
+      {
+        // We compare comments using case-sensitive comparison.
+        return string.Equals(_comment, other._comment, StringComparison.Ordinal);
+      }
 
-			return true;
-		}
+      return _product.Equals(other._product);
+    }
 
-		internal static bool TryParse (string input, int minimalCount, out List<ProductInfoHeaderValue> result)
-		{
-			var list = new List<ProductInfoHeaderValue> ();
-			var lexer = new Lexer (input);
-			result = null;
+    public override int GetHashCode()
+    {
+      if (_product == null)
+      {
+        return _comment.GetHashCode();
+      }
+      return _product.GetHashCode();
+    }
 
-			while (true) {
-				ProductInfoHeaderValue element;
-				if (!TryParseElement (lexer, out element))
-					return false;
+    public static ProductInfoHeaderValue Parse(string input)
+    {
+      int index = 0;
+      object result = ProductInfoHeaderParser.SingleValueParser.ParseValue(
+          input, null, ref index);
+      if (index < input.Length)
+      {
+        // There is some invalid leftover data. Normally BaseHeaderParser.TryParseValue would 
+        // handle this, but ProductInfoHeaderValue does not derive from BaseHeaderParser.
+        throw new FormatException(string.Format(System.Globalization.CultureInfo.InvariantCulture, "The format of value '{0}' is invalid.", input.Substring(index)));
+      }
+      return (ProductInfoHeaderValue)result;
+    }
 
-				if (element == null) {
-					if (list != null && minimalCount <= list.Count) {
-						result = list;
-						return true;
-					}
+    public static bool TryParse(string input, out ProductInfoHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-					return false;
-				}
+      if (ProductInfoHeaderParser.SingleValueParser.TryParseValue(input, null, ref index, out output))
+      {
+        if (index < input.Length)
+        {
+          // There is some invalid leftover data. Normally BaseHeaderParser.TryParseValue would 
+          // handle this, but ProductInfoHeaderValue does not derive from BaseHeaderParser.
+          return false;
+        }
+        parsedValue = (ProductInfoHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-				list.Add (element);
-			}
-		}
+    internal static int GetProductInfoLength(string input, int startIndex, out ProductInfoHeaderValue parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-		static bool TryParseElement (Lexer lexer, out ProductInfoHeaderValue parsedValue)
-		{
-			string comment;
-			parsedValue = null;
-			Token t;
+      parsedValue = null;
 
-			if (lexer.ScanCommentOptional (out comment, out t)) {
-				if (comment == null)
-					return false;
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-				parsedValue = new ProductInfoHeaderValue ();
-				parsedValue.Comment = comment;
-				return true;
-			}
+      int current = startIndex;
 
-			if (t == Token.Type.End)
-				return true;
+      // Caller must remove leading whitespace.
+      string comment = null;
+      ProductHeaderValue product = null;
+      if (input[current] == '(')
+      {
+        int commentLength = 0;
+        if (HttpRuleParser.GetCommentLength(input, current, out commentLength) != HttpParseResult.Parsed)
+        {
+          return 0;
+        }
 
-			if (t != Token.Type.Token)
-				return false;
+        comment = input.Substring(current, commentLength);
 
-			var value = new ProductHeaderValue ();
-			value.Name = lexer.GetStringValue (t);
+        current = current + commentLength;
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      }
+      else
+      {
+        // Trailing whitespace is removed by GetProductLength().
+        int productLength = ProductHeaderValue.GetProductLength(input, current, out product);
 
-			var pos = lexer.Position;
-			t = lexer.Scan ();
-			if (t == Token.Type.SeparatorSlash) {
+        if (productLength == 0)
+        {
+          return 0;
+        }
 
-				t = lexer.Scan ();
-				if (t != Token.Type.Token)
-					return false;
+        current = current + productLength;
+      }
 
-				value.Version = lexer.GetStringValue (t);
-			} else {
-				lexer.Position = pos;
-			}
+      parsedValue = new ProductInfoHeaderValue();
+      parsedValue._product = product;
+      parsedValue._comment = comment;
+      return current - startIndex;
+    }
 
-			parsedValue = new ProductInfoHeaderValue (value);
-			return true;
-		}
-
-		public override string ToString ()
-		{
-			if (Product == null)
-				return Comment;
-
-			return Product.ToString ();
-		}
-	}
+    object ICloneable.Clone()
+    {
+      return new ProductInfoHeaderValue(this);
+    }
+  }
 }

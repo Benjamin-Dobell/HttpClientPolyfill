@@ -1,213 +1,322 @@
-//
-// NameValueHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
-
+using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
 
 namespace System.Net.Http.Headers
 {
-	public class NameValueHeaderValue : ICloneable
-	{
-		internal string value;
+  /// <summary>Represents a name/value pair used in various headers as defined in RFC 2616.</summary>
+  public class NameValueHeaderValue : ICloneable
+  {
+    /// <summary>Gets the header name.</summary>
+    /// <returns>Returns <see cref="T:System.String" />.The header name.</returns>
+    public string Name
+    {
+      get
+      {
+        return this.name;
+      }
+    }
 
-		public NameValueHeaderValue (string name)
-			: this (name, null)
-		{
-		}
+    /// <summary>Gets the header value.</summary>
+    /// <returns>Returns <see cref="T:System.String" />.The header value.</returns>
+    public string Value
+    {
+      get
+      {
+        return this.value;
+      }
+      set
+      {
+        NameValueHeaderValue.CheckValueFormat(value);
+        this.value = value;
+      }
+    }
 
-		public NameValueHeaderValue (string name, string value)
-		{
-			Parser.Token.Check (name);
+    internal NameValueHeaderValue()
+    {
+    }
 
-			this.Name = name;
-			this.Value = value;
-		}
+    /// <summary>Initializes a new instance of the <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> class.</summary>
+    /// <param name="name">The header name.</param>
+    public NameValueHeaderValue(string name) : this(name, null)
+    {
+    }
 
-		protected internal NameValueHeaderValue (NameValueHeaderValue source)
-		{
-			this.Name = source.Name;
-			this.value = source.value;
-		}
+    /// <summary>Initializes a new instance of the <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> class.</summary>
+    /// <param name="name">The header name.</param>
+    /// <param name="value">The header value.</param>
+    public NameValueHeaderValue(string name, string value)
+    {
+      NameValueHeaderValue.CheckNameValueFormat(name, value);
+      this.name = name;
+      this.value = value;
+    }
 
-		internal NameValueHeaderValue ()
-		{
-		}
+    /// <summary>Initializes a new instance of the <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> class.</summary>
+    /// <param name="source">A <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> object used to initialize the new instance.</param>
+    protected NameValueHeaderValue(NameValueHeaderValue source)
+    {
+      this.name = source.name;
+      this.value = source.value;
+    }
 
-		public string Name { get; internal set; }
+    /// <summary>Serves as a hash function for an <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> object.</summary>
+    /// <returns>Returns <see cref="T:System.Int32" />.A hash code for the current object.</returns>
+    public override int GetHashCode()
+    {
+      int hashCode = this.name.ToLowerInvariant().GetHashCode();
+      if (string.IsNullOrEmpty(this.value))
+      {
+        return hashCode;
+      }
+      if (this.value[0] == '"')
+      {
+        return hashCode ^ this.value.GetHashCode();
+      }
+      return hashCode ^ this.value.ToLowerInvariant().GetHashCode();
+    }
 
-		public string Value {
-			get {
-				return value;
-			}
-			set {
-				if (!string.IsNullOrEmpty (value)) {
-					var lexer = new Lexer (value);
-					var token = lexer.Scan ();
-					if (lexer.Scan () != Token.Type.End || !(token == Token.Type.Token || token == Token.Type.QuotedString))
-						throw new FormatException ();
+    /// <summary>Determines whether the specified <see cref="T:System.Object" /> is equal to the current <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> object.</summary>
+    /// <returns>Returns <see cref="T:System.Boolean" />.true if the specified <see cref="T:System.Object" /> is equal to the current object; otherwise, false.</returns>
+    /// <param name="obj">The object to compare with the current object.</param>
+    public override bool Equals(object obj)
+    {
+      NameValueHeaderValue nameValueHeaderValue = obj as NameValueHeaderValue;
+      if (nameValueHeaderValue == null)
+      {
+        return false;
+      }
+      if (string.Compare(this.name, nameValueHeaderValue.name, StringComparison.OrdinalIgnoreCase) != 0)
+      {
+        return false;
+      }
+      if (string.IsNullOrEmpty(this.value))
+      {
+        return string.IsNullOrEmpty(nameValueHeaderValue.value);
+      }
+      if (this.value[0] == '"')
+      {
+        return string.CompareOrdinal(this.value, nameValueHeaderValue.value) == 0;
+      }
+      return string.Compare(this.value, nameValueHeaderValue.value, StringComparison.OrdinalIgnoreCase) == 0;
+    }
 
-					value = lexer.GetStringValue (token);
-				}
+    /// <summary>Converts a string to an <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> instance.</summary>
+    /// <returns>Returns <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" />.An <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> instance.</returns>
+    /// <param name="input">A string that represents name value header value information.</param>
+    /// <exception cref="T:System.ArgumentNullException">
+    ///   <paramref name="input" /> is a null reference.</exception>
+    /// <exception cref="T:System.FormatException">
+    ///   <paramref name="input" /> is not valid name value header value information.</exception>
+    public static NameValueHeaderValue Parse(string input)
+    {
+      int num = 0;
+      return (NameValueHeaderValue)GenericHeaderParser.SingleValueNameValueParser.ParseValue(input, null, ref num);
+    }
 
-				this.value = value;
-			}
-		}
+    /// <summary>Determines whether a string is valid <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> information.</summary>
+    /// <returns>Returns <see cref="T:System.Boolean" />.true if <paramref name="input" /> is valid <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> information; otherwise, false.</returns>
+    /// <param name="input">The string to validate.</param>
+    /// <param name="parsedValue">The <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> version of the string.</param>
+    public static bool TryParse(string input, out NameValueHeaderValue parsedValue)
+    {
+      int num = 0;
+      parsedValue = null;
+      object obj;
+      if (GenericHeaderParser.SingleValueNameValueParser.TryParseValue(input, null, ref num, out obj))
+      {
+        parsedValue = (NameValueHeaderValue)obj;
+        return true;
+      }
+      return false;
+    }
 
-		internal static NameValueHeaderValue Create (string name, string value)
-		{
-			return new NameValueHeaderValue () {
-				Name = name,
-				value = value
-			};
-		}
+    /// <summary>Returns a string that represents the current <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> object.</summary>
+    /// <returns>Returns <see cref="T:System.String" />.A string that represents the current object.</returns>
+    public override string ToString()
+    {
+      if (!string.IsNullOrEmpty(this.value))
+      {
+        return this.name + "=" + this.value;
+      }
+      return this.name;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return new NameValueHeaderValue (this);
-		}
+    internal static void ToString(ICollection<NameValueHeaderValue> values, char separator, bool leadingSeparator, StringBuilder destination)
+    {
+      if (values == null || values.Count == 0)
+      {
+        return;
+      }
+      foreach (NameValueHeaderValue current in values)
+      {
+        if (leadingSeparator || destination.Length > 0)
+        {
+          destination.Append(separator);
+          destination.Append(' ');
+        }
+        destination.Append(current.ToString());
+      }
+    }
 
-		public override int GetHashCode ()
-		{
-			int hc = Name.ToLowerInvariant ().GetHashCode ();
-			if (!string.IsNullOrEmpty (value)) {
-				hc ^= value.ToLowerInvariant ().GetHashCode ();
-			}
+    internal static string ToString(ICollection<NameValueHeaderValue> values, char separator, bool leadingSeparator)
+    {
+      if (values == null || values.Count == 0)
+      {
+        return null;
+      }
+      StringBuilder stringBuilder = new StringBuilder();
+      NameValueHeaderValue.ToString(values, separator, leadingSeparator, stringBuilder);
+      return stringBuilder.ToString();
+    }
 
-			return hc;
-		}
+    internal static int GetHashCode(ICollection<NameValueHeaderValue> values)
+    {
+      if (values == null || values.Count == 0)
+      {
+        return 0;
+      }
+      int num = 0;
+      foreach (NameValueHeaderValue current in values)
+      {
+        num ^= current.GetHashCode();
+      }
+      return num;
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as NameValueHeaderValue;
-			if (source == null || !string.Equals (source.Name, Name, StringComparison.OrdinalIgnoreCase))
-				return false;
+    internal static int GetNameValueLength(string input, int startIndex, out NameValueHeaderValue parsedValue)
+    {
+      return NameValueHeaderValue.GetNameValueLength(input, startIndex, NameValueHeaderValue.defaultNameValueCreator, out parsedValue);
+    }
 
-			if (string.IsNullOrEmpty (value))
-				return string.IsNullOrEmpty (source.value);
+    internal static int GetNameValueLength(string input, int startIndex, Func<NameValueHeaderValue> nameValueCreator, out NameValueHeaderValue parsedValue)
+    {
+      parsedValue = null;
+      if (string.IsNullOrEmpty(input) || startIndex >= input.Length)
+      {
+        return 0;
+      }
+      int tokenLength = HttpRuleParser.GetTokenLength(input, startIndex);
+      if (tokenLength == 0)
+      {
+        return 0;
+      }
+      string text = input.Substring(startIndex, tokenLength);
+      int num = startIndex + tokenLength;
+      num += HttpRuleParser.GetWhitespaceLength(input, num);
+      if (num == input.Length || input[num] != '=')
+      {
+        parsedValue = nameValueCreator();
+        parsedValue.name = text;
+        num += HttpRuleParser.GetWhitespaceLength(input, num);
+        return num - startIndex;
+      }
+      num++;
+      num += HttpRuleParser.GetWhitespaceLength(input, num);
+      int valueLength = NameValueHeaderValue.GetValueLength(input, num);
+      if (valueLength == 0)
+      {
+        return 0;
+      }
+      parsedValue = nameValueCreator();
+      parsedValue.name = text;
+      parsedValue.value = input.Substring(num, valueLength);
+      num += valueLength;
+      num += HttpRuleParser.GetWhitespaceLength(input, num);
+      return num - startIndex;
+    }
 
-			return string.Equals (source.value, value, StringComparison.OrdinalIgnoreCase);
-		}
+    internal static int GetNameValueListLength(string input, int startIndex, char delimiter, ICollection<NameValueHeaderValue> nameValueCollection)
+    {
+      if (string.IsNullOrEmpty(input) || startIndex >= input.Length)
+      {
+        return 0;
+      }
+      int num = startIndex + HttpRuleParser.GetWhitespaceLength(input, startIndex);
+      while (true)
+      {
+        NameValueHeaderValue item = null;
+        int nameValueLength = NameValueHeaderValue.GetNameValueLength(input, num, NameValueHeaderValue.defaultNameValueCreator, out item);
+        if (nameValueLength == 0)
+        {
+          break;
+        }
+        nameValueCollection.Add(item);
+        num += nameValueLength;
+        num += HttpRuleParser.GetWhitespaceLength(input, num);
+        if (num == input.Length || input[num] != delimiter)
+        {
+          goto IL_5B;
+        }
+        num++;
+        num += HttpRuleParser.GetWhitespaceLength(input, num);
+      }
+      return 0;
+      IL_5B:
+      return num - startIndex;
+    }
 
-		public static NameValueHeaderValue Parse (string input)
-		{
-			NameValueHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    internal static NameValueHeaderValue Find(ICollection<NameValueHeaderValue> values, string name)
+    {
+      if (values == null || values.Count == 0)
+      {
+        return null;
+      }
+      foreach (NameValueHeaderValue current in values)
+      {
+        if (string.Compare(current.Name, name, StringComparison.OrdinalIgnoreCase) == 0)
+        {
+          return current;
+        }
+      }
+      return null;
+    }
 
-			throw new FormatException (input);
-		}
+    internal static int GetValueLength(string input, int startIndex)
+    {
+      if (startIndex >= input.Length)
+      {
+        return 0;
+      }
+      int tokenLength = HttpRuleParser.GetTokenLength(input, startIndex);
+      if (tokenLength == 0 && HttpRuleParser.GetQuotedStringLength(input, startIndex, out tokenLength) != HttpParseResult.Parsed)
+      {
+        return 0;
+      }
+      return tokenLength;
+    }
 
-		internal static bool TryParsePragma (string input, int minimalCount, out List<NameValueHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+    private static void CheckNameValueFormat(string name, string value)
+    {
+      HeaderUtilities.CheckValidToken(name, "name");
+      NameValueHeaderValue.CheckValueFormat(value);
+    }
 
-		internal static bool TryParseParameters (Lexer lexer, out List<NameValueHeaderValue> result, out Token t)
-		{		
-			var list = new List<NameValueHeaderValue> ();
-			result = null;
+    private static void CheckValueFormat(string value)
+    {
+      if (!string.IsNullOrEmpty(value) && NameValueHeaderValue.GetValueLength(value, 0) != value.Length)
+      {
+        throw new FormatException(string.Format(CultureInfo.InvariantCulture, "The format of value '{0}' is invalid.", value));
+      }
+    }
 
-			while (true) {
-				var attr = lexer.Scan ();
-				if (attr != Token.Type.Token) {
-					t = Token.Empty;
-					return false;
-				}
+    private static NameValueHeaderValue CreateNameValue()
+    {
+      return new NameValueHeaderValue();
+    }
 
-				string value = null;
+    /// <summary>Creates a new object that is a copy of the current <see cref="T:System.Net.Http.Headers.NameValueHeaderValue" /> instance.</summary>
+    /// <returns>Returns <see cref="T:System.Object" />.A copy of the current instance.</returns>
+    object ICloneable.Clone()
+    {
+      return new NameValueHeaderValue(this);
+    }
 
-				t = lexer.Scan ();
-				if (t == Token.Type.SeparatorEqual) {
-					t = lexer.Scan ();
-					if (t != Token.Type.Token && t != Token.Type.QuotedString)
-						return false;
+    private static readonly Func<NameValueHeaderValue> defaultNameValueCreator = new Func<NameValueHeaderValue>(NameValueHeaderValue.CreateNameValue);
 
-					value = lexer.GetStringValue (t);
+    private string name;
 
-					t = lexer.Scan ();
-				}
-
-				list.Add (new NameValueHeaderValue () {
-					Name = lexer.GetStringValue (attr),
-					value = value
-				});
-
-				if (t == Token.Type.SeparatorSemicolon)
-					continue;
-
-				result = list;
-				return true;
-			}
-		}
-
-		public override string ToString ()
-		{
-			if (string.IsNullOrEmpty (value))
-				return Name;
-
-			return Name + "=" + value;
-		}
-
-		public static bool TryParse (string input, out NameValueHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
-
-			parsedValue = null;
-			return false;
-		}
-
-		static bool TryParseElement (Lexer lexer, out NameValueHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
-
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
-
-			parsedValue = new NameValueHeaderValue () {
-				Name = lexer.GetStringValue (t),
-			};
-
-			t = lexer.Scan ();
-			if (t == Token.Type.SeparatorEqual) {
-				t = lexer.Scan ();
-
-				if (t == Token.Type.Token || t == Token.Type.QuotedString) {
-					parsedValue.value = lexer.GetStringValue (t);
-					t = lexer.Scan ();
-				} else {
-					return false;
-				}
-			}
-
-			return true;
-		}
-	}
+    private string value;
+  }
 }

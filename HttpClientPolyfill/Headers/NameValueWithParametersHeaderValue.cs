@@ -1,154 +1,165 @@
-//
-// NameValueWithParametersHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class NameValueWithParametersHeaderValue : NameValueHeaderValue, ICloneable
-	{
-		List<NameValueHeaderValue> parameters;
+  // According to the RFC, in places where a "parameter" is required, the value is mandatory 
+  // (e.g. Media-Type, Accept). However, we don't introduce a dedicated type for this.
+  public class NameValueWithParametersHeaderValue : NameValueHeaderValue, ICloneable
+  {
+    private static readonly Func<NameValueHeaderValue> s_nameValueCreator = CreateNameValue;
 
-		public NameValueWithParametersHeaderValue (string name)
-			: base (name)
-		{
-		}
+    private ObjectCollection<NameValueHeaderValue> _parameters;
 
-		public NameValueWithParametersHeaderValue (string name, string value)
-			: base (name, value)
-		{
-		}
+    public ICollection<NameValueHeaderValue> Parameters
+    {
+      get
+      {
+        if (_parameters == null)
+        {
+          _parameters = new ObjectCollection<NameValueHeaderValue>();
+        }
+        return _parameters;
+      }
+    }
 
-		protected NameValueWithParametersHeaderValue (NameValueWithParametersHeaderValue source)
-			: base (source)
-		{
-			if (source.parameters != null) {
-				foreach (var item in source.parameters)
-					Parameters.Add (item);
-			}
-		}
+    public NameValueWithParametersHeaderValue(string name)
+        : base(name)
+    {
+    }
 
-		private NameValueWithParametersHeaderValue ()
-			: base ()
-		{
-		}
+    public NameValueWithParametersHeaderValue(string name, string value)
+        : base(name, value)
+    {
+    }
 
-		public ICollection<NameValueHeaderValue> Parameters {
-			get {
-				return parameters ?? (parameters = new List<NameValueHeaderValue> ());
-			}
-		}
+    internal NameValueWithParametersHeaderValue()
+    {
+    }
 
-		object ICloneable.Clone ()
-		{
-			return new NameValueWithParametersHeaderValue (this);
-		}
+    protected NameValueWithParametersHeaderValue(NameValueWithParametersHeaderValue source)
+        : base(source)
+    {
+      if (source._parameters != null)
+      {
+        foreach (var parameter in source._parameters)
+        {
+          this.Parameters.Add((NameValueHeaderValue)((ICloneable)parameter).Clone());
+        }
+      }
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as NameValueWithParametersHeaderValue;
-			if (source == null)
-				return false;
+    public override bool Equals(object obj)
+    {
+      bool result = base.Equals(obj);
 
-			return base.Equals (obj) && source.parameters.SequenceEqual (parameters);
-		}
+      if (result)
+      {
+        NameValueWithParametersHeaderValue other = obj as NameValueWithParametersHeaderValue;
 
-		public override int GetHashCode ()
-		{
-			return base.GetHashCode () ^ HashCodeCalculator.Calculate (parameters);
-		}
+        if (other == null)
+        {
+          return false;
+        }
+        return HeaderUtilities.AreEqualCollections(_parameters, other._parameters);
+      }
 
-		public static new NameValueWithParametersHeaderValue Parse (string input)
-		{
-			NameValueWithParametersHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      return false;
+    }
 
-			throw new FormatException (input);
-		}
+    public override int GetHashCode()
+    {
+      return base.GetHashCode() ^ NameValueHeaderValue.GetHashCode(_parameters);
+    }
 
-		public override string ToString ()
-		{
-			if (parameters == null || parameters.Count == 0)
-				return base.ToString ();
+    public override string ToString()
+    {
+      return base.ToString() + NameValueHeaderValue.ToString(_parameters, ';', true);
+    }
 
-			return base.ToString () + CollectionExtensions.ToString (parameters);
-		}
+    public static new NameValueWithParametersHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (NameValueWithParametersHeaderValue)GenericHeaderParser.SingleValueNameValueWithParametersParser
+          .ParseValue(input, null, ref index);
+    }
 
-		public static bool TryParse (string input, out NameValueWithParametersHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+    public static bool TryParse(string input, out NameValueWithParametersHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-			parsedValue = null;
-			return false;
-		}
+      if (GenericHeaderParser.SingleValueNameValueWithParametersParser.TryParseValue(input,
+          null, ref index, out output))
+      {
+        parsedValue = (NameValueWithParametersHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-		internal static bool TryParse (string input, int minimalCount, out List<NameValueWithParametersHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+    internal static int GetNameValueWithParametersLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(input != null);
+      Debug.Assert(startIndex >= 0);
 
-		static bool TryParseElement (Lexer lexer, out NameValueWithParametersHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
+      parsedValue = null;
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-			parsedValue = new NameValueWithParametersHeaderValue () {
-				Name = lexer.GetStringValue (t),
-			};
+      NameValueHeaderValue nameValue = null;
+      int nameValueLength = NameValueHeaderValue.GetNameValueLength(input, startIndex,
+          s_nameValueCreator, out nameValue);
 
-			t = lexer.Scan ();
-			if (t == Token.Type.SeparatorEqual) {
-				t = lexer.Scan ();
+      if (nameValueLength == 0)
+      {
+        return 0;
+      }
 
-				if (t == Token.Type.Token || t == Token.Type.QuotedString) {
-					parsedValue.value = lexer.GetStringValue (t);
-					t = lexer.Scan ();
-				} else {
-					return false;
-				}
-			}
+      int current = startIndex + nameValueLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      NameValueWithParametersHeaderValue nameValueWithParameters =
+          nameValue as NameValueWithParametersHeaderValue;
+      Debug.Assert(nameValueWithParameters != null);
 
-			if (t == Token.Type.SeparatorSemicolon) {
-				List<NameValueHeaderValue> result;
-				if (!TryParseParameters (lexer,  out result, out t))
-					return false;
+      // So far we have a valid name/value pair. Check if we have also parameters for the name/value pair. If
+      // yes, parse parameters. E.g. something like "name=value; param1=value1; param2=value2".
+      if ((current < input.Length) && (input[current] == ';'))
+      {
+        current++; // skip delimiter.
+        int parameterLength = NameValueHeaderValue.GetNameValueListLength(input, current, ';',
+            (ObjectCollection<NameValueHeaderValue>)nameValueWithParameters.Parameters);
 
-				parsedValue.parameters = result;
-			}
+        if (parameterLength == 0)
+        {
+          return 0;
+        }
 
-			return true;
-		}
-	}
+        parsedValue = nameValueWithParameters;
+        return current + parameterLength - startIndex;
+      }
+
+      // We have a name/value pair without parameters.
+      parsedValue = nameValueWithParameters;
+      return current - startIndex;
+    }
+
+    private static NameValueHeaderValue CreateNameValue()
+    {
+      return new NameValueWithParametersHeaderValue();
+    }
+
+    object ICloneable.Clone()
+    {
+      return new NameValueWithParametersHeaderValue(this);
+    }
+  }
 }

@@ -1,137 +1,185 @@
-//
-// RangeConditionHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Globalization;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class RangeConditionHeaderValue : ICloneable
-	{
-		public RangeConditionHeaderValue (DateTimeOffset date)
-		{
-			Date = date;
-		}
+  public class RangeConditionHeaderValue : ICloneable
+  {
+    private DateTimeOffset? _date;
+    private EntityTagHeaderValue _entityTag;
 
-		public RangeConditionHeaderValue (EntityTagHeaderValue entityTag)
-		{
-			if (entityTag == null)
-				throw new ArgumentNullException ("entityTag");
+    public DateTimeOffset? Date
+    {
+      get { return _date; }
+    }
 
-			EntityTag = entityTag;
-		}
+    public EntityTagHeaderValue EntityTag
+    {
+      get { return _entityTag; }
+    }
 
-		public RangeConditionHeaderValue (string entityTag)
-			: this (new EntityTagHeaderValue (entityTag))
-		{
-		}
+    public RangeConditionHeaderValue(DateTimeOffset date)
+    {
+      _date = date;
+    }
 
-		public DateTimeOffset? Date { get; private set; }
-		public EntityTagHeaderValue EntityTag { get; private set; }
+    public RangeConditionHeaderValue(EntityTagHeaderValue entityTag)
+    {
+      if (entityTag == null)
+      {
+        throw new ArgumentNullException(nameof(entityTag));
+      }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+      _entityTag = entityTag;
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as RangeConditionHeaderValue;
-			if (source == null)
-				return false;
+    public RangeConditionHeaderValue(string entityTag)
+        : this(new EntityTagHeaderValue(entityTag))
+    {
+    }
 
-			return EntityTag != null ?
-				EntityTag.Equals (source.EntityTag) :
-				Date == source.Date;
-		}
+    private RangeConditionHeaderValue(RangeConditionHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public override int GetHashCode ()
-		{
-			return EntityTag != null ? EntityTag.GetHashCode () : Date.GetHashCode ();
-		}
+      _entityTag = source._entityTag;
+      _date = source._date;
+    }
 
-		public static RangeConditionHeaderValue Parse (string input)
-		{
-			RangeConditionHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    private RangeConditionHeaderValue()
+    {
+    }
 
-			throw new FormatException (input);
-		}
+    public override string ToString()
+    {
+      if (_entityTag == null)
+      {
+        return HttpRuleParser.DateToString(_date.Value);
+      }
+      return _entityTag.ToString();
+    }
 
-		public static bool TryParse (string input, out RangeConditionHeaderValue parsedValue)
-		{
-			parsedValue = null;
+    public override bool Equals(object obj)
+    {
+      RangeConditionHeaderValue other = obj as RangeConditionHeaderValue;
 
-			var lexer = new Lexer (input);
-			var t = lexer.Scan ();
-			bool is_weak;
+      if (other == null)
+      {
+        return false;
+      }
 
-			if (t == Token.Type.Token) {
-				if (lexer.GetStringValue (t) != "W") {
-					DateTimeOffset date;
-					if (!Lexer.TryGetDateValue (input, out date))
-						return false;
+      if (_entityTag == null)
+      {
+        return (other._date != null) && (_date.Value == other._date.Value);
+      }
 
-					parsedValue = new RangeConditionHeaderValue (date);
-					return true;
-				}
+      return _entityTag.Equals(other._entityTag);
+    }
 
-				if (lexer.PeekChar () != '/')
-					return false;
+    public override int GetHashCode()
+    {
+      if (_entityTag == null)
+      {
+        return _date.Value.GetHashCode();
+      }
 
-				is_weak = true;
-				lexer.EatChar ();
-				t = lexer.Scan ();
-			} else {
-				is_weak = false;
-			}
+      return _entityTag.GetHashCode();
+    }
 
-			if (t != Token.Type.QuotedString)
-				return false;
+    public static RangeConditionHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (RangeConditionHeaderValue)GenericHeaderParser.RangeConditionParser.ParseValue(
+          input, null, ref index);
+    }
 
-			if (lexer.Scan () != Token.Type.End)
-				return false;
+    public static bool TryParse(string input, out RangeConditionHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-			parsedValue = new RangeConditionHeaderValue (
-				new EntityTagHeaderValue () {
-					Tag = lexer.GetStringValue (t),
-					IsWeak = is_weak
-				});
+      if (GenericHeaderParser.RangeConditionParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (RangeConditionHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-			return true;
-		}
+    internal static int GetRangeConditionLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-		public override string ToString ()
-		{
-			if (EntityTag != null)
-				return EntityTag.ToString ();
+      parsedValue = null;
 
-			return Date.Value.ToString ("r", CultureInfo.InvariantCulture);
-		}
-	}
+      // Make sure we have at least 2 characters
+      if (string.IsNullOrEmpty(input) || (startIndex + 1 >= input.Length))
+      {
+        return 0;
+      }
+
+      int current = startIndex;
+
+      // Caller must remove leading whitespace.
+      DateTimeOffset date = DateTimeOffset.MinValue;
+      EntityTagHeaderValue entityTag = null;
+
+      // Entity tags are quoted strings optionally preceded by "W/". By looking at the first two character we
+      // can determine whether the string is en entity tag or a date.
+      char firstChar = input[current];
+      char secondChar = input[current + 1];
+
+      if ((firstChar == '\"') || (((firstChar == 'w') || (firstChar == 'W')) && (secondChar == '/')))
+      {
+        // trailing whitespace is removed by GetEntityTagLength()
+        int entityTagLength = EntityTagHeaderValue.GetEntityTagLength(input, current, out entityTag);
+
+        if (entityTagLength == 0)
+        {
+          return 0;
+        }
+
+        current = current + entityTagLength;
+
+        // RangeConditionHeaderValue only allows 1 value. There must be no delimiter/other chars after an 
+        // entity tag.
+        if (current != input.Length)
+        {
+          return 0;
+        }
+      }
+      else
+      {
+        if (!HttpRuleParser.TryStringToDate(input.Substring(current), out date))
+        {
+          return 0;
+        }
+
+        // If we got a valid date, then the parser consumed the whole string (incl. trailing whitespace).
+        current = input.Length;
+      }
+
+      RangeConditionHeaderValue result = new RangeConditionHeaderValue();
+      if (entityTag == null)
+      {
+        result._date = date;
+      }
+      else
+      {
+        result._entityTag = entityTag;
+      }
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new RangeConditionHeaderValue(this);
+    }
+  }
 }

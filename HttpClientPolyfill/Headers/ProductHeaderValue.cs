@@ -1,135 +1,164 @@
-//
-// ProductHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace System.Net.Http.Headers
 {
-	public class ProductHeaderValue : ICloneable
-	{
-		public ProductHeaderValue (string name)
-		{
-			Parser.Token.Check (name);
-			Name = name;
-		}
+  public class ProductHeaderValue : ICloneable
+  {
+    private string _name;
+    private string _version;
 
-		public ProductHeaderValue (string name, string version)
-			: this (name)
-		{
-			if (version != null)
-				Parser.Token.Check (version);
+    public string Name
+    {
+      get { return _name; }
+    }
 
-			Version = version;
-		}
+    // We can't use the System.Version type, since a version can be e.g. "x11".
+    public string Version
+    {
+      get { return _version; }
+    }
 
-		internal ProductHeaderValue ()
-		{
-		}
+    public ProductHeaderValue(string name)
+        : this(name, null)
+    {
+    }
 
-		public string Name { get; internal set; }
-		public string Version { get; internal set; }
+    public ProductHeaderValue(string name, string version)
+    {
+      HeaderUtilities.CheckValidToken(name, nameof(name));
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+      if (!string.IsNullOrEmpty(version))
+      {
+        HeaderUtilities.CheckValidToken(version, nameof(version));
+        _version = version;
+      }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as ProductHeaderValue;
-			if (source == null)
-				return false;
+      _name = name;
+    }
 
-			return string.Equals (source.Name, Name, StringComparison.OrdinalIgnoreCase) &&
-				string.Equals (source.Version, Version, StringComparison.OrdinalIgnoreCase);
-		}
+    private ProductHeaderValue(ProductHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public override int GetHashCode ()
-		{
-			var hc = Name.ToLowerInvariant ().GetHashCode ();
-			if (Version != null)
-				hc ^= Version.ToLowerInvariant ().GetHashCode ();
+      _name = source._name;
+      _version = source._version;
+    }
 
-			return hc;
-		}
+    private ProductHeaderValue()
+    {
+    }
 
-		public static ProductHeaderValue Parse (string input)
-		{
-			ProductHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    public override string ToString()
+    {
+      if (string.IsNullOrEmpty(_version))
+      {
+        return _name;
+      }
+      return _name + "/" + _version;
+    }
 
-			throw new FormatException (input);
-		}
+    public override bool Equals(object obj)
+    {
+      ProductHeaderValue other = obj as ProductHeaderValue;
 
-		public static bool TryParse (string input, out ProductHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+      if (other == null)
+      {
+        return false;
+      }
 
-			parsedValue = null;
-			return false;
-		}
+      return string.Equals(_name, other._name, StringComparison.OrdinalIgnoreCase) &&
+          string.Equals(_version, other._version, StringComparison.OrdinalIgnoreCase);
+    }
 
-		internal static bool TryParse (string input, int minimalCount, out List<ProductHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+    public override int GetHashCode()
+    {
+      int result = StringComparer.OrdinalIgnoreCase.GetHashCode(_name);
 
-		static bool TryParseElement (Lexer lexer, out ProductHeaderValue parsedValue, out Token t)
-		{
-			parsedValue = null;
+      if (!string.IsNullOrEmpty(_version))
+      {
+        result = result ^ StringComparer.OrdinalIgnoreCase.GetHashCode(_version);
+      }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      return result;
+    }
 
-			parsedValue = new ProductHeaderValue ();
-			parsedValue.Name = lexer.GetStringValue (t);
+    public static ProductHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (ProductHeaderValue)GenericHeaderParser.SingleValueProductParser.ParseValue(input, null, ref index);
+    }
 
-			t = lexer.Scan ();
-			if (t == Token.Type.SeparatorSlash) {
-				t = lexer.Scan ();
-				if (t != Token.Type.Token)
-					return false;
+    public static bool TryParse(string input, out ProductHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-				parsedValue.Version = lexer.GetStringValue (t);
-				t = lexer.Scan ();
-			}
+      if (GenericHeaderParser.SingleValueProductParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (ProductHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-			return true;
-		}
+    internal static int GetProductLength(string input, int startIndex, out ProductHeaderValue parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-		public override string ToString ()
-		{
-			return Version == null ? Name : Name + "/" + Version;
-		}
-	}
+      parsedValue = null;
+
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
+
+      // Parse the name string: <name> in '<name>/<version>'.
+      int nameLength = HttpRuleParser.GetTokenLength(input, startIndex);
+
+      if (nameLength == 0)
+      {
+        return 0;
+      }
+
+      ProductHeaderValue result = new ProductHeaderValue();
+      result._name = input.Substring(startIndex, nameLength);
+      int current = startIndex + nameLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      if ((current == input.Length) || (input[current] != '/'))
+      {
+        parsedValue = result;
+        return current - startIndex;
+      }
+
+      current++; // Skip '/' delimiter.
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      // Parse the name string: <version> in '<name>/<version>'.
+      int versionLength = HttpRuleParser.GetTokenLength(input, current);
+
+      if (versionLength == 0)
+      {
+        return 0; // If there is a '/' separator it must be followed by a valid token.
+      }
+
+      result._version = input.Substring(current, versionLength);
+
+      current = current + versionLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new ProductHeaderValue(this);
+    }
+  }
 }

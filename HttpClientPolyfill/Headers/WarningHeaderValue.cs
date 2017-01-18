@@ -1,180 +1,346 @@
-//
-// WarningHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 
 namespace System.Net.Http.Headers
 {
-	public class WarningHeaderValue : ICloneable
-	{
-		public WarningHeaderValue (int code, string agent, string text)
-		{
-			if (!IsCodeValid (code))
-				throw new ArgumentOutOfRangeException ("code");
+  public class WarningHeaderValue : ICloneable
+  {
+    private int _code;
+    private string _agent;
+    private string _text;
+    private DateTimeOffset? _date;
 
-			Parser.Uri.Check (agent);
-			Parser.Token.CheckQuotedString (text);
+    public int Code
+    {
+      get { return _code; }
+    }
 
-			Code = code;
-			Agent = agent;
-			Text = text;
-		}
+    public string Agent
+    {
+      get { return _agent; }
+    }
 
-		public WarningHeaderValue (int code, string agent, string text, DateTimeOffset date)
-			: this (code, agent, text)
-		{
-			Date = date;
-		}
+    public string Text
+    {
+      get { return _text; }
+    }
 
-		private WarningHeaderValue ()
-		{
-		}
+    public DateTimeOffset? Date
+    {
+      get { return _date; }
+    }
 
-		public string Agent { get; private set; }
-		public int Code { get; private set; }
-		public DateTimeOffset? Date { get; private set; }
-		public string Text { get; private set; }
+    public WarningHeaderValue(int code, string agent, string text)
+    {
+      CheckCode(code);
+      CheckAgent(agent);
+      HeaderUtilities.CheckValidQuotedString(text, nameof(text));
 
-		static bool IsCodeValid (int code)
-		{
-			return code >= 0 && code < 1000;
-		}
+      _code = code;
+      _agent = agent;
+      _text = text;
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public WarningHeaderValue(int code, string agent, string text, DateTimeOffset date)
+    {
+      CheckCode(code);
+      CheckAgent(agent);
+      HeaderUtilities.CheckValidQuotedString(text, nameof(text));
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as WarningHeaderValue;
-			if (source == null)
-				return false;
+      _code = code;
+      _agent = agent;
+      _text = text;
+      _date = date;
+    }
 
-			return Code == source.Code &&
-				string.Equals (source.Agent, Agent, StringComparison.OrdinalIgnoreCase) &&
-				Text == source.Text &&
-				Date == source.Date;
-		}
+    private WarningHeaderValue()
+    {
+    }
 
-		public override int GetHashCode ()
-		{
-			int hc = Code.GetHashCode ();
-			hc ^= Agent.ToLowerInvariant ().GetHashCode ();
-			hc ^= Text.GetHashCode ();
-			hc ^= Date.GetHashCode ();
+    private WarningHeaderValue(WarningHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-			return hc;
-		}
+      _code = source._code;
+      _agent = source._agent;
+      _text = source._text;
+      _date = source._date;
+    }
 
-		public static WarningHeaderValue Parse (string input)
-		{
-			WarningHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+    public override string ToString()
+    {
+      StringBuilder sb = new StringBuilder();
 
-			throw new FormatException (input);
-		}
+      // Warning codes are always 3 digits according to RFC2616
+      sb.Append(_code.ToString("000", NumberFormatInfo.InvariantInfo));
 
-		public static bool TryParse (string input, out WarningHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+      sb.Append(' ');
+      sb.Append(_agent);
+      sb.Append(' ');
+      sb.Append(_text);
 
-			parsedValue = null;
-			return false;
-		}
+      if (_date.HasValue)
+      {
+        sb.Append(" \"");
+        sb.Append(HttpRuleParser.DateToString(_date.Value));
+        sb.Append('\"');
+      }
 
-		internal static bool TryParse (string input, int minimalCount, out List<WarningHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+      return sb.ToString();
+    }
 
-		static bool TryParseElement (Lexer lexer, out WarningHeaderValue parsedValue, out Token t)	
-		{
-			parsedValue = null;
+    public override bool Equals(object obj)
+    {
+      WarningHeaderValue other = obj as WarningHeaderValue;
 
-			t = lexer.Scan ();
+      if (other == null)
+      {
+        return false;
+      }
 
-			if (t != Token.Type.Token)
-				return false;
+      // 'agent' is a host/token, i.e. use case-insensitive comparison. Use case-sensitive comparison for 'text'
+      // since it is a quoted string.
+      if ((_code != other._code) || (!string.Equals(_agent, other._agent, StringComparison.OrdinalIgnoreCase)) ||
+          (!string.Equals(_text, other._text, StringComparison.Ordinal)))
+      {
+        return false;
+      }
 
-			int code;
-			if (!lexer.TryGetNumericValue (t, out code) || !IsCodeValid (code))
-				return false;
+      // We have a date set. Verify 'other' has also a date that matches our value.
+      if (_date.HasValue)
+      {
+        return other._date.HasValue && (_date.Value == other._date.Value);
+      }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      // We don't have a date. If 'other' has a date, we're not equal.
+      return !other._date.HasValue;
+    }
 
-			var next = t;
-			if (lexer.PeekChar () == ':') {
-				lexer.EatChar ();
+    public override int GetHashCode()
+    {
+      int result = _code.GetHashCode() ^
+          StringComparer.OrdinalIgnoreCase.GetHashCode(_agent) ^
+          _text.GetHashCode();
 
-				next = lexer.Scan ();
-				if (next != Token.Type.Token)
-					return false;
-			}
+      if (_date.HasValue)
+      {
+        result = result ^ _date.Value.GetHashCode();
+      }
 
-			var value = new WarningHeaderValue ();
-			value.Code = code;
-			value.Agent = lexer.GetStringValue (t, next);
+      return result;
+    }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.QuotedString)
-				return false;
+    public static WarningHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (WarningHeaderValue)GenericHeaderParser.SingleValueWarningParser.ParseValue(input, null, ref index);
+    }
 
-			value.Text = lexer.GetStringValue (t);
+    public static bool TryParse(string input, out WarningHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-			t = lexer.Scan ();
-			if (t == Token.Type.QuotedString) {
-				DateTimeOffset date;
-				if (!lexer.TryGetDateValue (t, out date))
-					return false;
+      if (GenericHeaderParser.SingleValueWarningParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (WarningHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-				value.Date = date;
-				t = lexer.Scan ();
-			}
+    internal static int GetWarningLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-			parsedValue = value;
-			return true;
-		}
+      parsedValue = null;
 
-		public override string ToString ()
-		{
-			string s = Code.ToString ("000") + " " + Agent + " " + Text;
-			if (Date.HasValue)
-				s = s + " \"" + Date.Value.ToString ("r", CultureInfo.InvariantCulture) + "\"";
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
 
-			return s;
-		}
-	}
+      // Read <code> in '<code> <agent> <text> ["<date>"]'
+      int code;
+      int current = startIndex;
+
+      if (!TryReadCode(input, ref current, out code))
+      {
+        return 0;
+      }
+
+      // Read <agent> in '<code> <agent> <text> ["<date>"]'
+      string agent;
+      if (!TryReadAgent(input, current, ref current, out agent))
+      {
+        return 0;
+      }
+
+      // Read <text> in '<code> <agent> <text> ["<date>"]'
+      int textLength = 0;
+      int textStartIndex = current;
+      if (HttpRuleParser.GetQuotedStringLength(input, current, out textLength) != HttpParseResult.Parsed)
+      {
+        return 0;
+      }
+
+      current = current + textLength;
+
+      // Read <date> in '<code> <agent> <text> ["<date>"]'
+      DateTimeOffset? date = null;
+      if (!TryReadDate(input, ref current, out date))
+      {
+        return 0;
+      }
+
+      WarningHeaderValue result = new WarningHeaderValue();
+      result._code = code;
+      result._agent = agent;
+      result._text = input.Substring(textStartIndex, textLength);
+      result._date = date;
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    private static bool TryReadAgent(string input, int startIndex, ref int current, out string agent)
+    {
+      agent = null;
+
+      int agentLength = HttpRuleParser.GetHostLength(input, startIndex, true, out agent);
+
+      if (agentLength == 0)
+      {
+        return false;
+      }
+
+      current = current + agentLength;
+      int whitespaceLength = HttpRuleParser.GetWhitespaceLength(input, current);
+      current = current + whitespaceLength;
+
+      // At least one whitespace required after <agent>. Also make sure we have characters left for <text>
+      if ((whitespaceLength == 0) || (current == input.Length))
+      {
+        return false;
+      }
+
+      return true;
+    }
+
+    private static bool TryReadCode(string input, ref int current, out int code)
+    {
+      code = 0;
+      int codeLength = HttpRuleParser.GetNumberLength(input, current, false);
+
+      // code must be a 3 digit value. We accept less digits, but we don't accept more.
+      if ((codeLength == 0) || (codeLength > 3))
+      {
+        return false;
+      }
+
+      if (!HeaderUtilities.TryParseInt32(input.Substring(current, codeLength), out code))
+      {
+        Debug.Assert(false, "Unable to parse value even though it was parsed as <=3 digits string. Input: '" +
+            input + "', Current: " + current + ", CodeLength: " + codeLength);
+        return false;
+      }
+
+      current = current + codeLength;
+
+      int whitespaceLength = HttpRuleParser.GetWhitespaceLength(input, current);
+      current = current + whitespaceLength;
+
+      // Make sure the number is followed by at least one whitespace and that we have characters left to parse.
+      if ((whitespaceLength == 0) || (current == input.Length))
+      {
+        return false;
+      }
+
+      return true;
+    }
+
+    private static bool TryReadDate(string input, ref int current, out DateTimeOffset? date)
+    {
+      date = null;
+
+      // Make sure we have at least one whitespace between <text> and <date> (if we have <date>)
+      int whitespaceLength = HttpRuleParser.GetWhitespaceLength(input, current);
+      current = current + whitespaceLength;
+
+      // Read <date> in '<code> <agent> <text> ["<date>"]'
+      if ((current < input.Length) && (input[current] == '"'))
+      {
+        if (whitespaceLength == 0)
+        {
+          return false; // we have characters after <text> but they were not separated by a whitespace
+        }
+
+        current++; // skip opening '"'
+
+        // Find the closing '"'
+        int dateStartIndex = current;
+        while (current < input.Length)
+        {
+          if (input[current] == '"')
+          {
+            break;
+          }
+          current++;
+        }
+
+        if ((current == input.Length) || (current == dateStartIndex))
+        {
+          return false; // we couldn't find the closing '"' or we have an empty quoted string.
+        }
+
+        DateTimeOffset temp;
+        if (!HttpRuleParser.TryStringToDate(input.Substring(dateStartIndex, current - dateStartIndex), out temp))
+        {
+          return false;
+        }
+
+        date = temp;
+
+        current++; // skip closing '"'
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      }
+
+      return true;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new WarningHeaderValue(this);
+    }
+
+    private static void CheckCode(int code)
+    {
+      if ((code < 0) || (code > 999))
+      {
+        throw new ArgumentOutOfRangeException(nameof(code));
+      }
+    }
+
+    private static void CheckAgent(string agent)
+    {
+      if (string.IsNullOrEmpty(agent))
+      {
+        throw new ArgumentException("The value cannot be null or empty.", nameof(agent));
+      }
+
+      // 'receivedBy' can either be a host or a token. Since a token is a valid host, we only verify if the value
+      // is a valid host.
+      string host = null;
+      if (HttpRuleParser.GetHostLength(agent, 0, true, out host) != agent.Length)
+      {
+        throw new FormatException(string.Format(System.Globalization.CultureInfo.InvariantCulture, "The format of value '{0}' is invalid.", agent));
+      }
+    }
+  }
 }

@@ -1,187 +1,304 @@
-//
-// ViaHeaderValue.cs
-//
-// Authors:
-//	Marek Safar  <marek.safar@gmail.com>
-//
-// Copyright (C) 2011 Xamarin Inc (http://www.xamarin.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining
-// a copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to
-// permit persons to whom the Software is furnished to do so, subject to
-// the following conditions:
-//
-// The above copyright notice and this permission notice shall be
-// included in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-// LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Collections.Generic;
+using System.Diagnostics;
+using System.Text;
 
 namespace System.Net.Http.Headers
 {
-	public class ViaHeaderValue : ICloneable
-	{
-		public ViaHeaderValue (string protocolVersion, string receivedBy)
-		{
-			Parser.Token.Check (protocolVersion);
-			Parser.Uri.Check (receivedBy);
+  public class ViaHeaderValue : ICloneable
+  {
+    private string _protocolName;
+    private string _protocolVersion;
+    private string _receivedBy;
+    private string _comment;
 
-			ProtocolVersion = protocolVersion;
-			ReceivedBy = receivedBy;
-		}
+    public string ProtocolName
+    {
+      get { return _protocolName; }
+    }
 
-		public ViaHeaderValue (string protocolVersion, string receivedBy, string protocolName)
-			: this (protocolVersion, receivedBy)
-		{
-			if (!string.IsNullOrEmpty (protocolName)) {
-				Parser.Token.Check (protocolName);
-				ProtocolName = protocolName;
-			}
-		}
+    public string ProtocolVersion
+    {
+      get { return _protocolVersion; }
+    }
 
-		public ViaHeaderValue (string protocolVersion, string receivedBy, string protocolName, string comment)
-			: this (protocolVersion, receivedBy, protocolName)
-		{
-			if (!string.IsNullOrEmpty (comment)) {
-				Parser.Token.CheckComment (comment);
-				Comment = comment;
-			}
-		}
+    public string ReceivedBy
+    {
+      get { return _receivedBy; }
+    }
 
-		private ViaHeaderValue ()
-		{
-		}
+    public string Comment
+    {
+      get { return _comment; }
+    }
 
-		public string Comment { get; private set; }
-		public string ProtocolName { get; private set; }
-		public string ProtocolVersion { get; private set; }
-		public string ReceivedBy { get; private set; }
+    public ViaHeaderValue(string protocolVersion, string receivedBy)
+        : this(protocolVersion, receivedBy, null, null)
+    {
+    }
 
-		object ICloneable.Clone ()
-		{
-			return MemberwiseClone ();
-		}
+    public ViaHeaderValue(string protocolVersion, string receivedBy, string protocolName)
+        : this(protocolVersion, receivedBy, protocolName, null)
+    {
+    }
 
-		public override bool Equals (object obj)
-		{
-			var source = obj as ViaHeaderValue;
-			if (source == null)
-				return false;
+    public ViaHeaderValue(string protocolVersion, string receivedBy, string protocolName, string comment)
+    {
+      HeaderUtilities.CheckValidToken(protocolVersion, nameof(protocolVersion));
+      CheckReceivedBy(receivedBy);
 
-			return string.Equals (source.Comment, Comment, StringComparison.Ordinal) &&
-				string.Equals (source.ProtocolName, ProtocolName, StringComparison.OrdinalIgnoreCase) &&
-				string.Equals (source.ProtocolVersion, ProtocolVersion, StringComparison.OrdinalIgnoreCase) &&
-				string.Equals (source.ReceivedBy, ReceivedBy, StringComparison.OrdinalIgnoreCase);
-		}
+      if (!string.IsNullOrEmpty(protocolName))
+      {
+        HeaderUtilities.CheckValidToken(protocolName, nameof(protocolName));
+        _protocolName = protocolName;
+      }
 
-		public override int GetHashCode ()
-		{
-			int hc = ProtocolVersion.ToLowerInvariant ().GetHashCode ();
-			hc ^= ReceivedBy.ToLowerInvariant ().GetHashCode ();
+      if (!string.IsNullOrEmpty(comment))
+      {
+        HeaderUtilities.CheckValidComment(comment, nameof(comment));
+        _comment = comment;
+      }
 
-			if (!string.IsNullOrEmpty (ProtocolName)) {
-				hc ^= ProtocolName.ToLowerInvariant ().GetHashCode ();
-			}
+      _protocolVersion = protocolVersion;
+      _receivedBy = receivedBy;
+    }
 
-			if (!string.IsNullOrEmpty (Comment)) {
-				hc ^= Comment.GetHashCode ();
-			}
+    private ViaHeaderValue()
+    {
+    }
 
-			return hc;
-		}
+    private ViaHeaderValue(ViaHeaderValue source)
+    {
+      Debug.Assert(source != null);
 
-		public static ViaHeaderValue Parse (string input)
-		{
-			ViaHeaderValue value;
-			if (TryParse (input, out value))
-				return value;
+      _protocolName = source._protocolName;
+      _protocolVersion = source._protocolVersion;
+      _receivedBy = source._receivedBy;
+      _comment = source._comment;
+    }
 
-			throw new FormatException (input);
-		}
-		
-		public static bool TryParse (string input, out ViaHeaderValue parsedValue)
-		{
-			var lexer = new Lexer (input);
-			Token token;
-			if (TryParseElement (lexer, out parsedValue, out token) && token == Token.Type.End)
-				return true;
+    public override string ToString()
+    {
+      StringBuilder sb = new StringBuilder();
 
-			parsedValue = null;
-			return false;
-		}
+      if (!string.IsNullOrEmpty(_protocolName))
+      {
+        sb.Append(_protocolName);
+        sb.Append('/');
+      }
 
-		internal static bool TryParse (string input, int minimalCount, out List<ViaHeaderValue> result)
-		{
-			return CollectionParser.TryParse (input, minimalCount, TryParseElement, out result);
-		}
+      sb.Append(_protocolVersion);
+      sb.Append(' ');
+      sb.Append(_receivedBy);
 
-		static bool TryParseElement (Lexer lexer, out ViaHeaderValue parsedValue, out Token t)	
-		{
-			parsedValue = null;
+      if (!string.IsNullOrEmpty(_comment))
+      {
+        sb.Append(' ');
+        sb.Append(_comment);
+      }
 
-			t = lexer.Scan ();
-			if (t != Token.Type.Token)
-				return false;
+      return sb.ToString();
+    }
 
-			var next = lexer.Scan ();
-			ViaHeaderValue value = new ViaHeaderValue ();
+    public override bool Equals(object obj)
+    {
+      ViaHeaderValue other = obj as ViaHeaderValue;
 
-			if (next == Token.Type.SeparatorSlash) {
-				next = lexer.Scan ();
-				if (next != Token.Type.Token)
-					return false;
+      if (other == null)
+      {
+        return false;
+      }
 
-				value.ProtocolName = lexer.GetStringValue (t);
-				value.ProtocolVersion = lexer.GetStringValue (next);
+      // Note that for token and host case-insensitive comparison is used. Comments are compared using case-
+      // sensitive comparison.
+      return string.Equals(_protocolVersion, other._protocolVersion, StringComparison.OrdinalIgnoreCase) &&
+          string.Equals(_receivedBy, other._receivedBy, StringComparison.OrdinalIgnoreCase) &&
+          string.Equals(_protocolName, other._protocolName, StringComparison.OrdinalIgnoreCase) &&
+          string.Equals(_comment, other._comment, StringComparison.Ordinal);
+    }
 
-				next = lexer.Scan ();
-			} else {
-				value.ProtocolVersion = lexer.GetStringValue (t);
-			}
+    public override int GetHashCode()
+    {
+      int result = StringComparer.OrdinalIgnoreCase.GetHashCode(_protocolVersion) ^
+          StringComparer.OrdinalIgnoreCase.GetHashCode(_receivedBy);
 
-			if (next != Token.Type.Token)
-				return false;
+      if (!string.IsNullOrEmpty(_protocolName))
+      {
+        result = result ^ StringComparer.OrdinalIgnoreCase.GetHashCode(_protocolName);
+      }
 
-			if (lexer.PeekChar () == ':') {
-				lexer.EatChar ();
+      if (!string.IsNullOrEmpty(_comment))
+      {
+        result = result ^ _comment.GetHashCode();
+      }
 
-				t = lexer.Scan ();
-				if (t != Token.Type.Token)
-					return false;
-			} else {
-				t = next;
-			}
+      return result;
+    }
 
-			value.ReceivedBy = lexer.GetStringValue (next, t);
+    public static ViaHeaderValue Parse(string input)
+    {
+      int index = 0;
+      return (ViaHeaderValue)GenericHeaderParser.SingleValueViaParser.ParseValue(input, null, ref index);
+    }
 
-			string comment;
-			if (lexer.ScanCommentOptional (out comment, out t)) {
-				t = lexer.Scan ();
-			}
+    public static bool TryParse(string input, out ViaHeaderValue parsedValue)
+    {
+      int index = 0;
+      object output;
+      parsedValue = null;
 
-			value.Comment = comment;
-			parsedValue = value;
-			return true;
-		}
+      if (GenericHeaderParser.SingleValueViaParser.TryParseValue(input, null, ref index, out output))
+      {
+        parsedValue = (ViaHeaderValue)output;
+        return true;
+      }
+      return false;
+    }
 
-		public override string ToString ()
-		{
-			string s = ProtocolName != null ?
-				ProtocolName + "/" + ProtocolVersion + " " + ReceivedBy :
-				ProtocolVersion + " " + ReceivedBy;
+    internal static int GetViaLength(string input, int startIndex, out object parsedValue)
+    {
+      Debug.Assert(startIndex >= 0);
 
-			return Comment != null ? s + " " + Comment : s;
-		}
-	}
+      parsedValue = null;
+
+      if (string.IsNullOrEmpty(input) || (startIndex >= input.Length))
+      {
+        return 0;
+      }
+
+      // Read <protocolName> and <protocolVersion> in '[<protocolName>/]<protocolVersion> <receivedBy> [<comment>]'
+      string protocolName = null;
+      string protocolVersion = null;
+      int current = GetProtocolEndIndex(input, startIndex, out protocolName, out protocolVersion);
+
+      // If we reached the end of the string after reading protocolName/Version we return (we expect at least
+      // <receivedBy> to follow). If reading protocolName/Version read 0 bytes, we return. 
+      if ((current == startIndex) || (current == input.Length))
+      {
+        return 0;
+      }
+      Debug.Assert(protocolVersion != null);
+
+      // Read <receivedBy> in '[<protocolName>/]<protocolVersion> <receivedBy> [<comment>]'
+      string receivedBy = null;
+      int receivedByLength = HttpRuleParser.GetHostLength(input, current, true, out receivedBy);
+
+      if (receivedByLength == 0)
+      {
+        return 0;
+      }
+
+      current = current + receivedByLength;
+      current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+      string comment = null;
+      if ((current < input.Length) && (input[current] == '('))
+      {
+        // We have a <comment> in '[<protocolName>/]<protocolVersion> <receivedBy> [<comment>]'
+        int commentLength = 0;
+        if (HttpRuleParser.GetCommentLength(input, current, out commentLength) != HttpParseResult.Parsed)
+        {
+          return 0; // We found a '(' character but it wasn't a valid comment. Abort.
+        }
+
+        comment = input.Substring(current, commentLength);
+
+        current = current + commentLength;
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+      }
+
+      ViaHeaderValue result = new ViaHeaderValue();
+      result._protocolVersion = protocolVersion;
+      result._protocolName = protocolName;
+      result._receivedBy = receivedBy;
+      result._comment = comment;
+
+      parsedValue = result;
+      return current - startIndex;
+    }
+
+    private static int GetProtocolEndIndex(string input, int startIndex, out string protocolName,
+        out string protocolVersion)
+    {
+      // We have a string of the form '[<protocolName>/]<protocolVersion> <receivedBy> [<comment>]'. The first
+      // token may either be the protocol name or protocol version. We'll only find out after reading the token
+      // and by looking at the following character: If it is a '/' we just parsed the protocol name, otherwise
+      // the protocol version.
+      protocolName = null;
+      protocolVersion = null;
+
+      int current = startIndex;
+      int protocolVersionOrNameLength = HttpRuleParser.GetTokenLength(input, current);
+
+      if (protocolVersionOrNameLength == 0)
+      {
+        return 0;
+      }
+
+      current = startIndex + protocolVersionOrNameLength;
+      int whitespaceLength = HttpRuleParser.GetWhitespaceLength(input, current);
+      current = current + whitespaceLength;
+
+      if (current == input.Length)
+      {
+        return 0;
+      }
+
+      if (input[current] == '/')
+      {
+        // We parsed the protocol name
+        protocolName = input.Substring(startIndex, protocolVersionOrNameLength);
+
+        current++; // skip the '/' delimiter
+        current = current + HttpRuleParser.GetWhitespaceLength(input, current);
+
+        protocolVersionOrNameLength = HttpRuleParser.GetTokenLength(input, current);
+
+        if (protocolVersionOrNameLength == 0)
+        {
+          return 0; // We have a string "<token>/" followed by non-token chars. This is invalid.
+        }
+
+        protocolVersion = input.Substring(current, protocolVersionOrNameLength);
+
+        current = current + protocolVersionOrNameLength;
+        whitespaceLength = HttpRuleParser.GetWhitespaceLength(input, current);
+        current = current + whitespaceLength;
+      }
+      else
+      {
+        protocolVersion = input.Substring(startIndex, protocolVersionOrNameLength);
+      }
+
+      if (whitespaceLength == 0)
+      {
+        return 0; // We were able to parse [<protocolName>/]<protocolVersion> but it wasn't followed by a WS
+      }
+
+      return current;
+    }
+
+    object ICloneable.Clone()
+    {
+      return new ViaHeaderValue(this);
+    }
+
+    private static void CheckReceivedBy(string receivedBy)
+    {
+      if (string.IsNullOrEmpty(receivedBy))
+      {
+        throw new ArgumentException("The value cannot be null or empty.", nameof(receivedBy));
+      }
+
+      // 'receivedBy' can either be a host or a token. Since a token is a valid host, we only verify if the value
+      // is a valid host.
+      string host = null;
+      if (HttpRuleParser.GetHostLength(receivedBy, 0, true, out host) != receivedBy.Length)
+      {
+        throw new FormatException(string.Format(System.Globalization.CultureInfo.InvariantCulture, "The format of value '{0}' is invalid.", receivedBy));
+      }
+    }
+  }
 }

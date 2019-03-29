@@ -139,7 +139,7 @@ namespace System.Net.Http
         throw new ObjectDisposedException(GetType().ToString());
 
       if (buffer != null)
-        return CompletedTask.Default;
+        return Task.FromResult(default(VoidResult));
 
       buffer = CreateFixedMemoryStream(maxBufferSize);
       return SerializeToStreamAsync(buffer, null)
@@ -152,12 +152,12 @@ namespace System.Net.Http
         throw new ObjectDisposedException(GetType().ToString());
 
       if (buffer != null)
-        return CompletedTask.FromResult<Stream>(new MemoryStream(buffer.GetBuffer(), 0, (int)buffer.Length, false));
+        return Task.FromResult<Stream>(new MemoryStream(buffer.GetBuffer(), 0, (int)buffer.Length, false));
 
       if (stream == null)
         return CreateContentReadStreamAsync().Select(task => stream = task.Result);
 
-      return CompletedTask.FromResult(stream);
+      return Task.FromResult(stream);
     }
 
     public Task<byte[]> ReadAsByteArrayAsync()

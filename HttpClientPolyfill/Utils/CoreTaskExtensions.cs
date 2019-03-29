@@ -986,7 +986,7 @@ namespace HttpClientLibrary
               }
             }
 
-            return CompletedTask.Default;
+            return Task.FromResult(default(VoidResult));
           };
 
       task
@@ -1097,7 +1097,7 @@ namespace HttpClientLibrary
               }
             }
 
-            return CompletedTask.FromResult(default(TResult));
+            return Task.FromResult(default(TResult));
           };
 
       task

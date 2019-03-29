@@ -42,14 +42,14 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Threading, Version=1.0.2856.102, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL" Condition="$(Configuration) == 'NET35' Or $(Configuration) == 'Debug'">
-      <HintPath>..\packages\TaskParallelLibrary.1.0.2856.0\lib\Net35\System.Threading.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
+    <Reference Include="Theraot.Core, Version=3.0.2.0, Culture=neutral, PublicKeyToken=b1460dff8a28f7a7">
+      <HintPath>..\packages\Theraot.Core.3.0.2\lib\net35\Theraot.Core.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ByteArrayContent.cs" />
@@ -117,11 +117,8 @@
     <Compile Include="StreamContent.cs" />
     <Compile Include="StringContent.cs" />
     <Compile Include="StringEx.cs" />
-    <Compile Include="Utils\CancellationTokenSourceExtensions.cs" />
-    <Compile Include="Utils\CompletedTask.cs" />
     <Compile Include="Utils\CoreTaskExtensions.cs" />
     <Compile Include="Utils\IAsyncDisposable.cs" />
-    <Compile Include="Utils\StreamExtensions.cs" />
     <Compile Include="Utils\TaskBlocks.cs" />
     <Compile Include="Utils\TaskCompletionSourceExtensions.cs" />
     <Compile Include="Utils\VoidResult.cs" />

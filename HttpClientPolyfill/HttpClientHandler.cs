@@ -383,16 +383,16 @@ namespace System.Net.Http
         // This fixes the issue that's been reported on the forums:
         // http://forums.xamarin.com/discussion/17770/length-required-error-in-http-post-since-latest-release
         wrequest.ContentLength = 0;
-        intermediate = CompletedTask.Default;
+        intermediate = Task.FromResult(default(VoidResult));
       }
       else
       {
-        intermediate = CompletedTask.Default;
+        intermediate = Task.FromResult(default(VoidResult));
       }
 
       HttpWebResponse wresponse = null;
       Func<Task<IDisposable>> resource =
-        () => CompletedTask.FromResult<IDisposable>(cancellationToken.Register(l => ((HttpWebRequest)l).Abort(), wrequest));
+        () => Task.FromResult<IDisposable>(cancellationToken.Register(l => ((HttpWebRequest)l).Abort(), wrequest));
       Func<Task<IDisposable>, Task> body =
         _ =>
         {
@@ -411,18 +411,18 @@ namespace System.Net.Http
                   return task;
                 }
 
-                return CompletedTask.Default;
+                return Task.FromResult(default(VoidResult));
               })
             .Then(
               task =>
               {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                  return CompletedTask.Canceled<HttpResponseMessage>();
+                  return Task.FromCanceled<HttpResponseMessage>(cancellationToken);
                 }
                 else
                 {
-                  return CompletedTask.Default;
+                  return Task.FromResult(default(VoidResult));
                 }
               });
         };

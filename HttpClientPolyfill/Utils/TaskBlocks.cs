@@ -98,12 +98,12 @@ namespace HttpClientLibrary
                     else
                     {
                       disposable.Dispose();
-                      return CompletedTask.Default;
+                      return Task.FromResult(default(VoidResult));
                     }
                   }
                 }
 
-                return CompletedTask.Default;
+                return Task.FromResult(default(VoidResult));
               });
     }
 
@@ -188,12 +188,12 @@ namespace HttpClientLibrary
                     else
                     {
                       disposable.Dispose();
-                      return CompletedTask.Default;
+                      return Task.FromResult(default(VoidResult));
                     }
                   }
                 }
 
-                return CompletedTask.Default;
+                return Task.FromResult(default(VoidResult));
               });
     }
 
@@ -268,7 +268,7 @@ namespace HttpClientLibrary
             currentTask = bodyTask.Select(continuation).Finally(handleErrors).ObserveExceptions();
           };
 
-      currentTask = CompletedTask.Default.Select(continuation).Finally(handleErrors).ObserveExceptions();
+      currentTask = Task.FromResult(default(VoidResult)).Select(continuation).Finally(handleErrors).ObserveExceptions();
       return taskCompletionSource.Task;
     }
 
@@ -353,7 +353,7 @@ namespace HttpClientLibrary
             currentTask = bodyTask.Then(conditionContinuation).Select(continuation).Finally(statusCheck).ObserveExceptions();
           };
 
-      currentTask = CompletedTask.Default.Then(conditionContinuation).Select(continuation).Finally(statusCheck).ObserveExceptions();
+      currentTask = Task.FromResult(default(VoidResult)).Then(conditionContinuation).Select(continuation).Finally(statusCheck).ObserveExceptions();
       return taskCompletionSource.Task;
     }
   }

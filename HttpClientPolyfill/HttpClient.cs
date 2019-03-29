@@ -282,7 +282,7 @@ namespace System.Net.Http
     Task<HttpResponseMessage> SendAsyncWorker(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationToken cancellationToken)
     {
       var currentSource = this.cts;
-      Func<Task<CancellationTokenSource>> acquireResource = () => CompletedTask.FromResult(CancellationTokenSource.CreateLinkedTokenSource(currentSource.Token, cancellationToken));
+      Func<Task<CancellationTokenSource>> acquireResource = () => Task.FromResult(CancellationTokenSource.CreateLinkedTokenSource(currentSource.Token, cancellationToken));
       Func<Task<CancellationTokenSource>, Task<HttpResponseMessage>> body =
         resourceTask =>
         {
@@ -309,7 +309,7 @@ namespace System.Net.Http
                   .Select(_ => response);
               }
 
-              return CompletedTask.FromResult(response);
+              return Task.FromResult(response);
             })
             .Finally(_ => GC.KeepAlive(currentSource));
         };

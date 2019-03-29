@@ -70,7 +70,7 @@ namespace System.Net.Http
 
     protected override Task<Stream> CreateContentReadStreamAsync()
     {
-      return CompletedTask.FromResult(content);
+      return Task.FromResult(content);
     }
 
     protected override void Dispose(bool disposing)

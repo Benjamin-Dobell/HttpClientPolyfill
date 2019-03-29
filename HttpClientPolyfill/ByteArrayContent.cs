@@ -64,7 +64,7 @@ namespace System.Net.Http
       return Task.FromResult<Stream>(new MemoryStream(content, offset, count));
     }
 
-    protected internal override Task SerializeToStreamAsync(Stream stream, TransportContext context)
+    protected internal override Task SerializeToStreamAsync(Stream stream, object context)
     {
       return stream.WriteAsync(content, offset, count);
     }
